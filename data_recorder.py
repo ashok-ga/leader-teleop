@@ -46,6 +46,8 @@ home_pos = [0, 0, 0, 0, 0, 0, 0]
 z = sl.Camera()
 ip = sl.InitParameters(camera_resolution=sl.RESOLUTION.HD720, camera_fps=30)
 
+pipeline = GstreamerRecorder()
+
 
 def count_total_files(directory):
     total = sum(len(files) for _, _, files in os.walk(directory))
@@ -252,7 +254,7 @@ def camera_thread(state, lock, stop, ser, name):
         f"joint_{i}" for i in range(1, NUM_JOINTS + 1)
     ]
     wr.writerow(hdr)
-    rec = GstreamerRecorder(f"{od}/video.mp4")
+    pipeline.start_recording(f"{od}/video.mp4")
     fc, st = 0, time.time()
     try:
         while not stop["stop"]:
@@ -270,10 +272,10 @@ def camera_thread(state, lock, stop, ser, name):
                 sr = read_servo_position(ser, SERVO_ID)
                 sn = min(max((sr - POSITION_1) / (POSITION_2 - POSITION_1), 0), 1)
                 wr.writerow([t, gd, sn] + pa)
-                rec.push_frame(stereo.tobytes())
+                pipeline.push_frame(stereo.tobytes())
                 fc += 1
     finally:
-        rec.close()
+        pipeline.stop_recording()
         cf.close()
         z.close()
         print(f'Total files: {count_total_files("recordings")}')
@@ -331,13 +333,7 @@ def main():
         term = Terminal()
         with term.cbreak():
             while True:
-                cmd = (
-                    input(
-                        "\nPress 's' to **start** recording, 't' to **end** session: "
-                    )
-                    .strip()
-                    .lower()
-                )
+                print("\nPress 's' to **start** recording, 't' to **end** session: ")
                 subcmd = term.inkey(timeout=None).lower()
                 if subcmd == "s":
                     # Launch one camera trial
