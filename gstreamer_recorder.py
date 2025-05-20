@@ -1,3 +1,4 @@
+import shutil
 import gi, threading, time
 
 gi.require_version("Gst", "1.0")
@@ -11,16 +12,19 @@ class GstreamerRecorder:
         Gst.init(None)
 
         # 1) Preview pipeline A: appsrc → tee → preview branch + shmsink branch
-        caps = (
+        self.caps = (
             f"video/x-raw,format=RGBA,width={width},height={height},framerate={fps}/1"
         )
         pipeline_a = (
-            "appsrc name=src is-live=true format=time block=true caps={caps} ! tee name=t "
+            f"appsrc name=src is-live=true format=time block=true caps=\"{self.caps}\" ! tee name=t "
             # preview
             "t. ! queue leaky=downstream ! videoconvert ! autovideosink sync=false "
             # shared‐memory output
-            f"t. ! queue ! videoconvert ! shmsink socket-path={self.SHM_PATH} wait-for-connection=false sync=false"
-        ).format(caps=caps)
+            f"t. ! queue ! videoconvert ! shmsink socket-path={self.SHM_PATH} wait-for-connection=false sync=true"
+        )
+
+        print(pipeline_a)
+
         self.pipeline_a = Gst.parse_launch(pipeline_a)
         self.appsrc = self.pipeline_a.get_by_name("src")
 
@@ -47,30 +51,36 @@ class GstreamerRecorder:
     def push_frame(self, frame_bytes):
         buf = Gst.Buffer.new_allocate(None, len(frame_bytes), None)
         buf.fill(0, frame_bytes)
+        
         buf.pts = self.timestamp
         buf.duration = self.duration
         self.timestamp += self.duration
+        # print(f"[DEBUG] Pushing frame with PTS: {buf.pts}, duration: {buf.duration}")
+
         ret = self.appsrc.emit("push-buffer", buf)
         if ret != Gst.FlowReturn.OK:
             print("⚠️ push-buffer failed:", ret)
 
     def start_recording(self, output_file="out.mp4"):
+        self.timestamp = 0
+
         if self.pipeline_b:
             print("Already recording!")
             return
 
         # 2) Record pipeline B: shmsrc → encoder → filesink
         pipeline_b = (
-            f"shmsrc socket-path={self.SHM_PATH} do-timestamp=true ! queue ! "
+            f"shmsrc socket-path={self.SHM_PATH} ! capsfilter caps=\"{self.caps}\" ! queue ! "
             "videoconvert ! x264enc tune=zerolatency speed-preset=ultrafast ! "
-            "h264parse ! mp4mux ! filesink location={} sync=false"
-        ).format(output_file)
+            f"h264parse ! mp4mux ! filesink location={output_file} sync=false"
+        )
+
+        print(pipeline_b)
 
         self.pipeline_b = Gst.parse_launch(pipeline_b)
         bus = self.pipeline_b.get_bus()
         bus.add_signal_watch()
         bus.connect("message::error", lambda b, m: print("B Error:", m.parse_error()))
-        bus.connect("message::eos", lambda b, m: print("B got EOS"))
 
         self.pipeline_b.set_state(Gst.State.PLAYING)
         print("🔴 Recording started →", output_file)
@@ -81,12 +91,18 @@ class GstreamerRecorder:
             return
 
         # cleanly finish the file
+        print("🛑 Sending EOS to pipeline_b...")
+
         self.pipeline_b.send_event(Gst.Event.new_eos())
         # wait for EOS message
         bus = self.pipeline_b.get_bus()
+
+        print("🛑 Waiting for EOS message...")
+
         msg = bus.timed_pop_filtered(
             Gst.CLOCK_TIME_NONE, Gst.MessageType.EOS | Gst.MessageType.ERROR
         )
+        print("hjere", msg)
         if msg.type == Gst.MessageType.ERROR:
             print("B Error on EOS:", msg.parse_error())
         else:
@@ -99,6 +115,7 @@ class GstreamerRecorder:
         # stop both pipelines
         if self.pipeline_b:
             self.stop_recording()
+
         self.appsrc.emit("end-of-stream")
         self.pipeline_a.set_state(Gst.State.NULL)
         self.loop.quit()
@@ -111,6 +128,8 @@ def main():
     width, height = 2560, 720
     fps = 30
     num_frames = fps * 2  # 10 seconds
+
+    rec.start_recording("temp.mp4")
 
     try:
         for _ in range(num_frames):

@@ -20,7 +20,7 @@ from blessed import Terminal
 
 # Paths and ports
 CONFIG_FILE = "robot_config.yaml"
-DXL_PORT = "/dev/ttyUSB0"
+DXL_PORT = "/dev/ttyUSB2"
 DXL_BAUD = 1000000
 CAN_IFACE = "can0"
 RS485_PORT = "/dev/ttyUSB1"
@@ -45,6 +45,8 @@ home_pos = [0, 0, 0, 0, 0, 0, 0]
 
 z = sl.Camera()
 ip = sl.InitParameters(camera_resolution=sl.RESOLUTION.HD720, camera_fps=30)
+if z.open(ip) != sl.ERROR_CODE.SUCCESS:
+    raise Exception("shabs")
 
 pipeline = GstreamerRecorder()
 
@@ -236,8 +238,7 @@ def gripper_thread(state, lock, stop, ser):
 
 def camera_thread(state, lock, stop, ser, name):
     global piper
-    if z.open(ip) != sl.ERROR_CODE.SUCCESS:
-        return
+
     rt = sl.RuntimeParameters()
     L, R = sl.Mat(), sl.Mat()
     info = z.get_camera_information()
@@ -258,6 +259,7 @@ def camera_thread(state, lock, stop, ser, name):
     fc, st = 0, time.time()
     try:
         while not stop["stop"]:
+            print("here")
             if z.grab(rt) == sl.ERROR_CODE.SUCCESS:
                 z.retrieve_image(L, sl.VIEW.LEFT)
                 z.retrieve_image(R, sl.VIEW.RIGHT)
@@ -275,10 +277,12 @@ def camera_thread(state, lock, stop, ser, name):
                 pipeline.push_frame(stereo.tobytes())
                 fc += 1
     finally:
+        print("asjkajjskaj")
         pipeline.stop_recording()
         cf.close()
-        z.close()
         print(f'Total files: {count_total_files("recordings")}')
+
+    print("here")
 
 
 def load_config(p=CONFIG_FILE):
@@ -374,7 +378,11 @@ def main():
     stop_all["stop"] = True
     for t in background_threads:
         t.join()
+    
     ser.close()
+    pipeline.shutdown()
+    z.close()
+
     print("All threads stopped. Goodbye.")
 
 
