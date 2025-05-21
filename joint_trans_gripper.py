@@ -13,7 +13,7 @@ from piper_sdk import C_PiperInterface_V2
 
 CONFIG_FILE = "robot_config.yaml"
 PORT_NAME = "/dev/ttyUSB0"
-BAUDRATE = 1000000
+BAUDRATE = 4000000
 SERIAL_PORT = '/dev/ttyUSB1'
 BAUD_RATE = 115200
 POSITION_KEY = 'present_position'

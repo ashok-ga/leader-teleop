@@ -7,7 +7,7 @@ from commands import DynamixelCommands  # Your command abstraction
 
 CONFIG_FILE = "robot_config.yaml"
 PORT_NAME = "/dev/ttyUSB0"
-BAUDRATE = 1000000
+BAUDRATE = 4000000
 POSITION_KEY = 'present_position'
 
 class SyncReader:

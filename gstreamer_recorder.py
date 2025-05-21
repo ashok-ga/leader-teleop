@@ -25,7 +25,7 @@ class GstreamerRecorder:
         # OpenCV preview window
         if self.preview:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(self.window_name, self.width // 2, self.height // 2)
+            cv2.resizeWindow(self.window_name, self.width , self.height)
 
     def start_recording(self, output_file="output.mp4"):
         self.timestamp = 0
@@ -73,13 +73,18 @@ class GstreamerRecorder:
         ret = self.appsrc.emit("push-buffer", buf)
         if ret != Gst.FlowReturn.OK:
             print("⚠️ push-buffer failed:", ret)
-
         # Show preview via OpenCV
         if self.preview:
             # Convert RGBA to BGR for display
+            print("1")
             bgr = cv2.cvtColor(frame_rgba, cv2.COLOR_RGBA2BGR)
+            
+            print("2")
             cv2.imshow(self.window_name, bgr)
+            
+            print("3")
             cv2.waitKey(1)
+
 
     def stop_recording(self):
         if not self.pipeline:

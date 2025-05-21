@@ -20,8 +20,8 @@ from blessed import Terminal
 
 # Paths and ports
 CONFIG_FILE = "robot_config.yaml"
-DXL_PORT = "/dev/ttyUSB2"
-DXL_BAUD = 1000000
+DXL_PORT = "/dev/ttyUSB0"
+DXL_BAUD = 4000000
 CAN_IFACE = "can0"
 RS485_PORT = "/dev/ttyUSB1"
 RS485_BAUD = 115200
@@ -48,7 +48,7 @@ ip = sl.InitParameters(camera_resolution=sl.RESOLUTION.HD720, camera_fps=30)
 if z.open(ip) != sl.ERROR_CODE.SUCCESS:
     raise Exception("shabs")
 
-pipeline = GstreamerRecorder()
+pipeline = GstreamerRecorder(preview=False)
 
 
 def count_total_files(directory):
@@ -182,22 +182,28 @@ def reader_thread(state, lock, stop, config):
 def piper_reader_thread(state, lock, stop):
     """Continuously read Piper joint messages and store radians."""
     try:
+        def _piper_angle_to_rad(angle):
+            return angle * math.pi / 180.0 / 1e3
+
         while not stop["stop"]:
             try:
-                msg = piper.GetArmJointMsgs()
-                js = msg.joint_state
-                raw_vals = [
-                    getattr(js, f"joint_{i}", None) for i in range(1, NUM_JOINTS + 1)
-                ]
-                angles_rad = []
-                for raw in raw_vals:
-                    if raw is None:
-                        angles_rad.append(None)
-                    else:
-                        # raw is Piper units per radian
-                        angles_rad.append(raw / DEG_FACTOR)
+                msg = piper.GetArmEndPoseMsgs()
+
+                # This includes the following information:
+                # X, Y, Z position (in 0.001 mm)
+                # RX, RY, RZ orientation (in 0.001 degrees)
+
+                js = msg.end_pose
+                eef_pose = {
+                    "x": js.X_axis / 1e6,
+                    "y": js.Y_axis / 1e6,
+                    "z": js.Z_axis / 1e6,
+                    "qx": _piper_angle_to_rad(js.RX_axis),
+                    "qy": _piper_angle_to_rad(js.RY_axis),
+                    "qz": _piper_angle_to_rad(js.RZ_axis),
+                }
                 with lock:
-                    state["piper_angles"] = angles_rad
+                    state["eef_pose"] = eef_pose
             except Exception:
                 pass
             time.sleep(0.01)
@@ -251,15 +257,12 @@ def camera_thread(state, lock, stop, ser, name):
     os.makedirs(od, exist_ok=True)
     cf = open(f"{od}/data.csv", "w", newline="")
     wr = csv.writer(cf)
-    hdr = ["Timestamp", "ServoCmd", "ServoPos"] + [
-        f"joint_{i}" for i in range(1, NUM_JOINTS + 1)
-    ]
+    hdr = ["Timestamp", "ServoCmd", "ServoPos", "x", "y", "z", "qx", "qy", "qz"]
     wr.writerow(hdr)
     pipeline.start_recording(f"{od}/video.mp4")
     fc, st = 0, time.time()
     try:
         while not stop["stop"]:
-            print("here")
             if z.grab(rt) == sl.ERROR_CODE.SUCCESS:
                 z.retrieve_image(L, sl.VIEW.LEFT)
                 z.retrieve_image(R, sl.VIEW.RIGHT)
@@ -270,14 +273,13 @@ def camera_thread(state, lock, stop, ser, name):
                 t = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                 with lock:
                     gd = state.get("diffs", {}).get("gripper", 0)
-                    pa = state.get("piper_angles", [None] * NUM_JOINTS)
+                    pa = state.get("eef_pose", [None] * NUM_JOINTS)
                 sr = read_servo_position(ser, SERVO_ID)
                 sn = min(max((sr - POSITION_1) / (POSITION_2 - POSITION_1), 0), 1)
-                wr.writerow([t, gd, sn] + pa)
-                pipeline.push_frame(stereo.tobytes())
+                wr.writerow([t, gd, sn] + list(pa.values()))
+                pipeline.push_frame(stereo)
                 fc += 1
     finally:
-        print("asjkajjskaj")
         pipeline.stop_recording()
         cf.close()
         print(f'Total files: {count_total_files("recordings")}')

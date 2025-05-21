@@ -63,7 +63,7 @@ robot:
 
     - name: gripper
       id: 6
-      motor_type: XL320
+      motor_type: XL430
       min: 0
-      max: 1023
+      max: 4095 
 
