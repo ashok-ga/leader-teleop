@@ -1,124 +1,114 @@
-import shutil
-import gi, threading, time
+import gi
+import time
+import cv2
+import numpy as np
 
 gi.require_version("Gst", "1.0")
-from gi.repository import Gst, GLib
+from gi.repository import Gst
 
 
 class GstreamerRecorder:
-    SHM_PATH = "/tmp/gst-shm.sock"
-
-    def __init__(self, width=2560, height=720, fps=30):
+    def __init__(self, width=2560, height=720, fps=30, preview=True):
         Gst.init(None)
-
-        # 1) Preview pipeline A: appsrc → tee → preview branch + shmsink branch
-        self.caps = (
-            f"video/x-raw,format=RGBA,width={width},height={height},framerate={fps}/1"
-        )
-        pipeline_a = (
-            f"appsrc name=src is-live=true format=time block=true caps=\"{self.caps}\" ! tee name=t "
-            # preview
-            "t. ! queue leaky=downstream ! videoconvert ! autovideosink sync=false "
-            # shared‐memory output
-            f"t. ! queue ! videoconvert ! shmsink socket-path={self.SHM_PATH} wait-for-connection=false sync=true"
-        )
-
-        print(pipeline_a)
-
-        self.pipeline_a = Gst.parse_launch(pipeline_a)
-        self.appsrc = self.pipeline_a.get_by_name("src")
-
-        # buffer‐timing
+        self.width = width
+        self.height = height
+        self.fps = fps
         self.duration = Gst.SECOND // fps
         self.timestamp = 0
 
-        # start preview pipeline
-        self.pipeline_a.set_state(Gst.State.PLAYING)
+        self.pipeline = None
+        self.appsrc = None
 
-        # spin A’s bus in its own loop so errors show up
-        self.loop = GLib.MainLoop()
-        bus = self.pipeline_a.get_bus()
-        bus.add_signal_watch()
-        bus.connect(
-            "message::error",
-            lambda b, m: (print("A Error:", m.parse_error()), self.loop.quit()),
+        self.preview = preview
+        self.window_name = "Preview"
+
+        # OpenCV preview window
+        if self.preview:
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(self.window_name, self.width // 2, self.height // 2)
+
+    def start_recording(self, output_file="output.mp4"):
+        self.timestamp = 0
+        if self.pipeline:
+            print("⚠️ Already recording.")
+            return
+
+        caps = (
+            f"video/x-raw,format=RGBA,width={self.width},"
+            f"height={self.height},framerate={self.fps}/1"
         )
-        threading.Thread(target=self.loop.run, daemon=True).start()
 
-        # record pipeline B is not created until needed
-        self.pipeline_b = None
+        # 1) Convert RGBA→I420, 2) encode, 3) inline SPS/PPS, 4) fast-start MP4
+        pipeline_desc = (
+            f'appsrc name=appsrc is-live=true format=time block=true caps="{caps}" ! '
+            # ensure we’re in a format x264 wants
+            "videoconvert ! video/x-raw,format=I420 ! "
+            # encode
+            "x264enc tune=zerolatency speed-preset=ultrafast key-int-max=30 bitrate=5000 ! "
+            # inline SPS/PPS before each keyframe
+            "h264parse config-interval=1 ! "
+            # put metadata at the front of the file so players see it immediately
+            "mp4mux faststart=true ! "
+            "filesink location={} sync=false"
+        ).format(output_file)
 
-    def push_frame(self, frame_bytes):
-        buf = Gst.Buffer.new_allocate(None, len(frame_bytes), None)
-        buf.fill(0, frame_bytes)
-        
+        self.pipeline = Gst.parse_launch(pipeline_desc)
+        self.appsrc = self.pipeline.get_by_name("appsrc")
+
+        self.pipeline.set_state(Gst.State.PLAYING)
+        print(f"🔴 Recording started to {output_file}")
+
+    def push_frame(self, frame_rgba: np.ndarray):
+        if self.appsrc is None:
+            return
+
+        # Push into GStreamer
+        data = frame_rgba.tobytes()
+        buf = Gst.Buffer.new_allocate(None, len(data), None)
+        buf.fill(0, data)
         buf.pts = self.timestamp
         buf.duration = self.duration
         self.timestamp += self.duration
-        # print(f"[DEBUG] Pushing frame with PTS: {buf.pts}, duration: {buf.duration}")
 
         ret = self.appsrc.emit("push-buffer", buf)
         if ret != Gst.FlowReturn.OK:
             print("⚠️ push-buffer failed:", ret)
 
-    def start_recording(self, output_file="out.mp4"):
-        self.timestamp = 0
-
-        if self.pipeline_b:
-            print("Already recording!")
-            return
-
-        # 2) Record pipeline B: shmsrc → encoder → filesink
-        pipeline_b = (
-            f"shmsrc socket-path={self.SHM_PATH} ! capsfilter caps=\"{self.caps}\" ! queue ! "
-            "videoconvert ! x264enc tune=zerolatency speed-preset=ultrafast ! "
-            f"h264parse ! mp4mux ! filesink location={output_file} sync=false"
-        )
-
-        print(pipeline_b)
-
-        self.pipeline_b = Gst.parse_launch(pipeline_b)
-        bus = self.pipeline_b.get_bus()
-        bus.add_signal_watch()
-        bus.connect("message::error", lambda b, m: print("B Error:", m.parse_error()))
-
-        self.pipeline_b.set_state(Gst.State.PLAYING)
-        print("🔴 Recording started →", output_file)
+        # Show preview via OpenCV
+        if self.preview:
+            # Convert RGBA to BGR for display
+            bgr = cv2.cvtColor(frame_rgba, cv2.COLOR_RGBA2BGR)
+            cv2.imshow(self.window_name, bgr)
+            cv2.waitKey(1)
 
     def stop_recording(self):
-        if not self.pipeline_b:
+        if not self.pipeline:
             print("Not recording.")
             return
 
-        # cleanly finish the file
-        print("🛑 Sending EOS to pipeline_b...")
-
-        self.pipeline_b.send_event(Gst.Event.new_eos())
-        # wait for EOS message
-        bus = self.pipeline_b.get_bus()
-
-        print("🛑 Waiting for EOS message...")
-
+        print("🛑 Sending EOS...")
+        self.pipeline.send_event(Gst.Event.new_eos())
+        bus = self.pipeline.get_bus()
         msg = bus.timed_pop_filtered(
             Gst.CLOCK_TIME_NONE, Gst.MessageType.EOS | Gst.MessageType.ERROR
         )
-        print("hjere", msg)
-        if msg.type == Gst.MessageType.ERROR:
-            print("B Error on EOS:", msg.parse_error())
-        else:
-            print("🟢 Recording finished cleanly")
 
-        self.pipeline_b.set_state(Gst.State.NULL)
-        self.pipeline_b = None
+        if msg.type == Gst.MessageType.ERROR:
+            print("❌ Recording error:", msg.parse_error())
+        else:
+            print("🟢 Recording finished cleanly.")
+
+        self.pipeline.set_state(Gst.State.NULL)
+        self.pipeline = None
+        self.appsrc = None
 
     def shutdown(self):
-        # stop both pipelines
-        if self.pipeline_b:
+        if self.pipeline:
             self.stop_recording()
 
-        self.appsrc.emit("end-of-stream")
-        self.pipeline_a.set_state(Gst.State.NULL)
-        self.loop.quit()
+        # Destroy preview window
+        if self.preview:
+            cv2.destroyWindow(self.window_name)
 
 
 def main():
@@ -129,7 +119,7 @@ def main():
     fps = 30
     num_frames = fps * 2  # 10 seconds
 
-    rec.start_recording("temp.mp4")
+    rec.start_recording("output.mp4")
 
     try:
         for _ in range(num_frames):
@@ -142,7 +132,7 @@ def main():
             frame = np.repeat(row[np.newaxis, :, :], height, axis=0)
             print(f"Frame shape: {frame.shape}, size: {len(frame.tobytes())}")
 
-            rec.push_frame(frame.tobytes())
+            rec.push_frame(frame)
 
             time.sleep(1 / fps)
 
