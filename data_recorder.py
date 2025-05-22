@@ -121,12 +121,38 @@ def reader_thread(cfg):
         event_stop.wait(0.003)
     rd.shutdown()
 
-def piper_reader_thread(piper):
+# def piper_reader_thread(piper):
+#     while not event_stop.is_set():
+#         js = piper.GetArmJointMsgs().joint_state
+#         angles = [getattr(js, f'joint_{i}', 0)/DEG_FACTOR for i in range(1, NUM_JOINTS+1)]
+#         with state_lock:
+#             state['piper_angles'] = angles
+#         event_stop.wait(0.01)
+
+def piper_reader_thread(state, lock, stop):
+    """Continuously read Piper joint messages and store radians."""
+    def _piper_angle_to_rad(angle):
+        return angle * math.pi / 180.0 / 1e3
+
     while not event_stop.is_set():
-        js = piper.GetArmJointMsgs().joint_state
-        angles = [getattr(js, f'joint_{i}', 0)/DEG_FACTOR for i in range(1, NUM_JOINTS+1)]
+        msg = piper.GetArmEndPoseMsgs()
+
+        # This includes the following information:
+        # X, Y, Z position (in 0.001 mm)
+        # RX, RY, RZ orientation (in 0.001 degrees)
+
+        js = msg.end_pose
+        eef_pose = {
+            "x": js.X_axis / 1e6,
+            "y": js.Y_axis / 1e6,
+            "z": js.Z_axis / 1e6,
+            "qx": _piper_angle_to_rad(js.RX_axis),
+            "qy": _piper_angle_to_rad(js.RY_axis),
+            "qz": _piper_angle_to_rad(js.RZ_axis),
+        }
         with state_lock:
-            state['piper_angles'] = angles
+            state["eef_pose"] = eef_pose
+        
         event_stop.wait(0.01)
 
 def sender_thread(piper):
@@ -173,7 +199,7 @@ def camera_thread(state, lock, stop, ser, name):
     os.makedirs(out_dir, exist_ok=True)
     cf = open(f'{out_dir}/data.csv', 'w', newline='')
     wr = csv.writer(cf)
-    hdr = ['Timestamp', 'ServoCmd', 'ServoPos'] + [f'joint_{i}' for i in range(1, NUM_JOINTS+1)]
+    hdr = ["Timestamp", "ServoCmd", "ServoPos", "x", "y", "z", "qx", "qy", "qz"]
     wr.writerow(hdr)
     pipeline.start_recording(f'{out_dir}/video.mp4')
     try:
@@ -185,7 +211,7 @@ def camera_thread(state, lock, stop, ser, name):
                 stereo[:, w:] = R.get_data()
                 t = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
                 with state_lock:
-                    pa = state.get('piper_angles', [0]*NUM_JOINTS)
+                    pa = state.get('eef_pose', [0]*NUM_JOINTS)
                     gd = state.get('diffs', {}).get('gripper', 0.0)
                 sr = read_servo_position(ser, SERVO_ID)
                 sn = min(max((sr - pos_min)/(pos_max - pos_min), 0.0), 1.0)
