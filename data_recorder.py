@@ -129,7 +129,7 @@ def reader_thread(cfg):
 #             state['piper_angles'] = angles
 #         event_stop.wait(0.01)
 
-def piper_reader_thread(state, lock, stop):
+def piper_reader_thread(piper):
     """Continuously read Piper joint messages and store radians."""
     def _piper_angle_to_rad(angle):
         return angle * math.pi / 180.0 / 1e3
@@ -215,7 +215,7 @@ def camera_thread(state, lock, stop, ser, name):
                     gd = state.get('diffs', {}).get('gripper', 0.0)
                 sr = read_servo_position(ser, SERVO_ID)
                 sn = min(max((sr - pos_min)/(pos_max - pos_min), 0.0), 1.0)
-                wr.writerow([t, gd, sn] + pa)
+                wr.writerow([t, gd, sn] + list(pa.values()))
                 pipeline.push_frame(stereo)
     finally:
         pipeline.stop_recording()
