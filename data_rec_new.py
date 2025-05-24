@@ -189,6 +189,7 @@ def camera_thread(state, lock, stop, ser, name):
                     gd = state.get('diffs', {}).get('gripper', 0.0)
                 sr = read_servo_position(ser, SERVO_ID)
                 sn = min(max((sr - pos_min)/(pos_max - pos_min), 0.0), 1.0)
+                print(sr , " : ", gd)
                 wr.writerow([t, gd, sn] + pa)
                 pipeline.push_frame(stereo)
     finally:
