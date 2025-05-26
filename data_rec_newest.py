@@ -422,6 +422,22 @@ def main():
     for i in range(1, NUM_JOINTS+1):
         piper_global.JointMaxAccConfig(i, PIPER_ACCEL)
         piper_global.MotorMaxSpdSet(i, PIPER_SPEED)
+
+    # --- Setup arm at initial position ---
+    factor = DEG_FACTOR  # Piper units per radian
+    initial_position = [0, 0, 0, 0, 0, 0, 0]  # 6 joints + gripper
+    joint_cmds = [
+        round(initial_position[0] * factor),
+        round(initial_position[1] * factor),
+        round(initial_position[2] * factor),
+        round(initial_position[3] * factor),
+        round(initial_position[4] * factor),
+        round(initial_position[5] * factor)
+    ]
+    # Wake up arm and send initial position
+    piper_global.MotionCtrl_2(0x01, 0x01, 100, 0x00)
+    piper_global.JointCtrl(*joint_cmds)
+    time.sleep(0.5)  
     
     rs485_serial_port = serial.Serial(RS485_PORT, RS485_BAUD, timeout=0.01)
 
