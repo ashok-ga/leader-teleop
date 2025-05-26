@@ -44,7 +44,7 @@ DEG_FACTOR    = 57295.7795
 NUM_JOINTS    = 6
 LOOP_HZ       = 200
 # gripper extremes
-pos_min, pos_max = 1200, 2276
+pos_min, pos_max = 1860, 2650
 GRIP_SPEED, GRIP_ACCEL = 7500, 0
 
 # pre-built RS-485 helper
