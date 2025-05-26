@@ -81,7 +81,7 @@ def record_with_preview(device="/dev/video2", outfile="scene1.mp4", duration=Non
 
 if __name__ == "__main__":
     record_with_preview(
-        device="/dev/video4",
+        device="/dev/video2",
         outfile="scene1.mp4",
         duration=None,        # Or e.g. 60 for 1 minute auto-stop
         live_view=True,       # Set False to record only, no preview
