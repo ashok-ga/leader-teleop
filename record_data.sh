@@ -8,4 +8,4 @@ bash can_activate.sh can0 1000000
 python3 piper_ctrl_joint.py
 
 # 3. Run data_rec_newest.py
-python3 data_rec_newest.py
+python3 data_recorder.py
