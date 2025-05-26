@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-leader-follower capture tool (optimized with joint smoothing)
+leader-follower capture tool (optimized with joint smoothing, lower CPU usage)
 ► Smoothing: Moving average window=10 for joints 1–6 (not gripper)
 """
 
@@ -14,7 +14,7 @@ import time
 import yaml
 import math
 from datetime import datetime
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import numpy as np
 import pyzed.sl as sl
@@ -37,14 +37,13 @@ PIPER_ACCEL   = 500
 PIPER_SPEED   = 3000
 DEG_FACTOR    = 57295.7795
 NUM_JOINTS    = 6
-LOOP_HZ       = 200
+LOOP_HZ       = 300
 # gripper extremes
-pos_min, pos_max = 1500, 2650
+pos_min, pos_max = 1150, 2200
 GRIP_SPEED, GRIP_ACCEL = 7500, 0
 GD_LOW = 0
 GD_HIGH = 30
 
-# pre-built RS-485 helper
 def make_grip_pkt(pos: int) -> bytes:
     hdr = bytearray([0xFF,0xFF,SERVO_ID,0x08,0x03,0x2A])
     pkt = hdr + struct.pack('<HHB', pos, GRIP_SPEED, GRIP_ACCEL) + b'\x00'
@@ -78,8 +77,8 @@ class SyncReader:
                 'length': length,
                 'joints': joints
             }
-        # --- Add: buffers for moving average smoothing (joint_name → buffer)
-        self.smooth_buffers = {j['name']: [] for group in groups.values()
+        # Use deque for smoothing (O(1) moving average)
+        self.smooth_buffers = {j['name']: deque(maxlen=10) for group in groups.values()
                               for j in group if j['name'] != 'gripper'}
 
     def read_all(self):
@@ -99,13 +98,9 @@ class SyncReader:
                     out[j['name']] = val  # No smoothing for gripper
                 else:
                     rad = math.radians(val)
-                    # --- Apply smoothing (moving average, window=10)
                     buf = self.smooth_buffers[j['name']]
                     buf.append(rad)
-                    if len(buf) > 10:
-                        buf.pop(0)
-                    mean_rad = sum(buf) / len(buf)
-                    out[j['name']] = mean_rad
+                    out[j['name']] = float(np.mean(buf))
         return out
 
     def shutdown(self):
@@ -124,17 +119,8 @@ def reader_thread(cfg):
         cur = rd.read_all()
         diffs = {k: cur.get(k, base[k]) - base[k] for k in base}
         with state_lock:
-            state['diffs'] = diffs
-        event_stop.wait(0.001)
-    rd.shutdown()
-
-# def piper_reader_thread(piper):
-#     while not event_stop.is_set():
-#         js = piper.GetArmJointMsgs().joint_state
-#         angles = [getattr(js, f'joint_{i}', 0)/DEG_FACTOR for i in range(1, NUM_JOINTS+1)]
-#         with state_lock:
-#             state['piper_angles'] = angles
-#         event_stop.wait(0.001)
+            state['diffs'] = diffs.copy()
+        event_stop.wait(0.003)  # ~333 Hz
 
 def piper_reader_thread(piper):
     """Continuously read Piper joint messages and store radians."""
@@ -143,11 +129,6 @@ def piper_reader_thread(piper):
 
     while not event_stop.is_set():
         msg = piper.GetArmEndPoseMsgs()
-
-        # This includes the following information:
-        # X, Y, Z position (in 0.001 mm)
-        # RX, RY, RZ orientation (in 0.001 degrees)
-
         js = msg.end_pose
         eef_pose = {
             "x": js.X_axis / 1e6,
@@ -158,9 +139,8 @@ def piper_reader_thread(piper):
             "qz": _piper_angle_to_rad(js.RZ_axis),
         }
         with state_lock:
-            state["eef_pose"] = eef_pose
-        
-        event_stop.wait(0.01)
+            state["eef_pose"] = eef_pose.copy()
+        event_stop.wait(0.005)  # 100 Hz is plenty for end pose
 
 def sender_thread(piper):
     period = 1.0/LOOP_HZ
@@ -168,7 +148,7 @@ def sender_thread(piper):
     names = [f'joint_{i}' for i in range(1, NUM_JOINTS+1)]
     while not event_stop.is_set():
         with state_lock:
-            diffs = state.get('diffs', {})
+            diffs = state.get('diffs', {}).copy()
             last_cmds = state.get('last_cmds')
         cmds = []
         for idx,name in enumerate(names):
@@ -185,14 +165,13 @@ def gripper_thread(ser):
     while not event_stop.is_set():
         with state_lock:
             gd = state.get('diffs', {}).get('gripper', 0.0)
-            # print("GD : " ,gd)
             last = state.get('last_grip')
         pos = int(pos_min + (min(max(gd, GD_LOW), GD_HIGH)/(GD_HIGH-GD_LOW))*(pos_max - pos_min))
         if pos != last:
             ser.write(make_grip_pkt(pos))
             with state_lock:
                 state['last_grip'] = pos
-        event_stop.wait(0.005)
+        event_stop.wait(0.001)  # 100 Hz
 
 def calculate_checksum(packet):
     checksum = sum(packet[2:]) & 0xFF
@@ -204,9 +183,6 @@ def build_position_query_packet(servo_id):
     packet.append(checksum)
     return bytes(packet)
 
-
-
-# ───────── utils ─────────
 def read_servo_position(ser, servo_id):
     query_packet = build_position_query_packet(servo_id)
     ser.flushInput()
@@ -225,11 +201,9 @@ def read_servo_position(ser, servo_id):
 
     return -1  # Failed to read
 
-# ───────── camera thread ─────────
 def camera_thread(state, lock, stop, ser, name):
     rt = sl.RuntimeParameters()
     L, R = sl.Mat(), sl.Mat()
-    # grab once parameters
     info = z.get_camera_information()
     w, h = info.camera_configuration.resolution.width, info.camera_configuration.resolution.height
     stereo = np.ascontiguousarray(np.empty((h, w*2, 4), np.uint8))
@@ -241,15 +215,19 @@ def camera_thread(state, lock, stop, ser, name):
     hdr = ["Timestamp", "ServoCmd", "ServoPos", "x", "y", "z", "qx", "qy", "qz"]
     wr.writerow(hdr)
     pipeline.start_recording(f'{out_dir}/video.mp4')
+    TARGET_FPS = 30
+    FRAME_PERIOD = 1.0 / TARGET_FPS
+
     try:
         while not stop['stop']:
+            loop_start = time.perf_counter()
             if z.grab(rt) == sl.ERROR_CODE.SUCCESS:
                 z.retrieve_image(L, sl.VIEW.LEFT)
                 z.retrieve_image(R, sl.VIEW.RIGHT)
                 stereo[:, :w] = L.get_data()
                 stereo[:, w:] = R.get_data()
                 t = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-                with state_lock:
+                with lock:
                     pa = state.get('eef_pose', [0]*NUM_JOINTS)
                     gd = state.get('diffs', {}).get('gripper', 0.0)
                 pos = float(min(max(gd, GD_LOW), GD_HIGH)/(GD_HIGH-GD_LOW))
@@ -257,21 +235,26 @@ def camera_thread(state, lock, stop, ser, name):
                 sn = min(max((sr - pos_min)/(pos_max - pos_min), 0.0), 1.0)
                 wr.writerow([t, pos, sn] + list(pa.values()))
                 pipeline.push_frame(stereo)
+            elapsed = time.perf_counter() - loop_start
+            to_sleep = FRAME_PERIOD - elapsed
+            if to_sleep > 0:
+                event_stop.wait(to_sleep)
     finally:
         pipeline.stop_recording()
         cf.close()
         print(f"Recorded files: {len(os.listdir(out_dir))}")
 
 def load_config():
-    return yaml.safe_load(open(CONFIG_FILE))
+    with open(CONFIG_FILE, 'r') as f:
+        return yaml.safe_load(f)
 
 # ───────── main ─────────
 def main():
     global z, pipeline, piper
     # initialize camera & pipeline first
+    zed_params = sl.InitParameters(camera_resolution=sl.RESOLUTION.HD720, camera_fps=30)
     z = sl.Camera()
-    params = sl.InitParameters(camera_resolution=sl.RESOLUTION.HD720, camera_fps=30)
-    assert z.open(params) == sl.ERROR_CODE.SUCCESS, '🔴 ZED open failed'
+    assert z.open(zed_params) == sl.ERROR_CODE.SUCCESS, '🔴 ZED open failed'
     pipeline = GstreamerRecorder()
 
     # then ask session name

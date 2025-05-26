@@ -44,9 +44,10 @@ DEG_FACTOR    = 57295.7795
 NUM_JOINTS    = 6
 LOOP_HZ       = 200
 # gripper extremes
-pos_min, pos_max = 1860, 2600
+pos_min, pos_max = 900, 1800
 GRIP_SPEED, GRIP_ACCEL = 7500, 0
-
+GD_LOW = 0
+GD_HIGH = 30
 # pre-built RS-485 helper
 def make_grip_pkt(pos: int) -> bytes:
     hdr = bytearray([0xFF,0xFF,SERVO_ID,0x08,0x03,0x2A])
@@ -81,6 +82,18 @@ class SyncReader:
                 'length': length,
                 'joints': joints
             }
+        # ───── moving average buffers ─────
+        # Only for joints 1-6 (not gripper)
+        self.filt_bufs = {}
+        self.filt_idx = {}
+        self.filt_count = {}
+        self.filt_win = 10
+        for mtype, info in self.readers.items():
+            for j in info['joints']:
+                if j['name'] != 'gripper':
+                    self.filt_bufs[j['name']] = [0.0] * self.filt_win
+                    self.filt_idx[j['name']] = 0
+                    self.filt_count[j['name']] = 0
 
     def read_all(self):
         out = {}
@@ -98,7 +111,21 @@ class SyncReader:
                     scale = 4095.0 if j['motor_type'] in ['XL430','XM430'] else 1023.0
                     rng = 360.0 if j['motor_type'] in ['XL430','XM430'] else 300.0
                     val = (raw / scale) * rng
-                out[j['name']] = math.radians(val)
+                val_rad = math.radians(val)
+                # Apply moving average only for joints 1–6 (not gripper)
+                if j['name'] != 'gripper':
+                    buf = self.filt_bufs[j['name']]
+                    idx = self.filt_idx[j['name']]
+                    count = self.filt_count[j['name']]
+                    buf[idx] = val_rad
+                    self.filt_idx[j['name']] = (idx + 1) % self.filt_win
+                    if count < self.filt_win:
+                        self.filt_count[j['name']] = count + 1
+                    n = self.filt_count[j['name']]
+                    avg_val = sum(buf[:n]) / n
+                    out[j['name']] = avg_val
+                else:
+                    out[j['name']] = val_rad if j['name'] != 'gripper' else val
         return out
 
     def shutdown(self):
@@ -153,7 +180,7 @@ def piper_reader_thread(piper):
         with state_lock:
             state["eef_pose"] = eef_pose
         
-        event_stop.wait(0.01)
+        event_stop.wait(0.005)
 
 def sender_thread(piper):
     period = 1.0/LOOP_HZ
@@ -179,12 +206,46 @@ def gripper_thread(ser):
         with state_lock:
             gd = state.get('diffs', {}).get('gripper', 0.0)
             last = state.get('last_grip')
-        pos = int(pos_min + min(max(gd, 0.0), 1.0)*(pos_max - pos_min))
+        pos = int(pos_min + (min(max(gd, GD_LOW), GD_HIGH)/(GD_HIGH-GD_LOW))*(pos_max - pos_min))
         if pos != last:
             ser.write(make_grip_pkt(pos))
             with state_lock:
                 state['last_grip'] = pos
-        event_stop.wait(0.01)
+        event_stop.wait(0.001)  # 100 Hz
+
+def calculate_checksum(packet):
+    checksum = sum(packet[2:]) & 0xFF
+    return (~checksum) & 0xFF
+
+
+def build_move_command(servo_id, position, speed, accel):
+    packet = [0xFF, 0xFF, servo_id, 0x08, 0x03, 0x2A,
+              position & 0xFF, (position >> 8) & 0xFF,
+              speed & 0xFF, (speed >> 8) & 0xFF,
+              accel, 0x00]
+    packet[-1] = calculate_checksum(packet)
+    return bytes(packet)
+
+
+def build_position_query_packet(servo_id):
+    packet = [0xFF, 0xFF, servo_id, 0x04, 0x02, 0x38, 0x02]
+    packet.append(calculate_checksum(packet))
+    return bytes(packet)
+
+
+def read_servo_position(ser, servo_id):
+    query = build_position_query_packet(servo_id)
+    ser.reset_input_buffer()
+    ser.write(query)
+    timeout = time.time() + 0.01
+    resp = bytearray()
+    while time.time() < timeout:
+        if ser.in_waiting:
+            resp.extend(ser.read(ser.in_waiting))
+    for i in range(len(resp)-7):
+        if resp[i]==0xFF and resp[i+1]==0xFF and resp[i+2]==servo_id:
+            return resp[i+5] | (resp[i+6]<<8)
+    return -1
 
 # ───────── camera thread ─────────
 def camera_thread(state, lock, stop, ser, name):
@@ -213,29 +274,16 @@ def camera_thread(state, lock, stop, ser, name):
                 with state_lock:
                     pa = state.get('eef_pose', [0]*NUM_JOINTS)
                     gd = state.get('diffs', {}).get('gripper', 0.0)
+                pos = float(min(max(gd, GD_LOW), GD_HIGH)/(GD_HIGH-GD_LOW))
                 sr = read_servo_position(ser, SERVO_ID)
                 sn = min(max((sr - pos_min)/(pos_max - pos_min), 0.0), 1.0)
-                wr.writerow([t, gd, sn] + list(pa.values()))
+                wr.writerow([t, pos, sn] + list(pa.values()))
                 pipeline.push_frame(stereo)
     finally:
         pipeline.stop_recording()
         cf.close()
         print(f"Recorded files: {len(os.listdir(out_dir))}")
 
-# ───────── utils ─────────
-def read_servo_position(ser, sid):
-    pkt = bytes([0xFF,0xFF,sid,0x04,0x02,0x38,0x02])
-    chk = (~sum(pkt[2:]) & 0xFF)
-    ser.reset_input_buffer()
-    ser.write(pkt + bytes([chk]))
-    end = time.time() + 0.01
-    resp = bytearray()
-    while time.time() < end and ser.in_waiting:
-        resp.extend(ser.read(ser.in_waiting))
-    for i in range(len(resp)-6):
-        if resp[i:i+2] == b'\xFF\xFF' and resp[i+2] == sid:
-            return resp[i+5] | (resp[i+6] << 8)
-    return 0
 
 def load_config():
     return yaml.safe_load(open(CONFIG_FILE))
