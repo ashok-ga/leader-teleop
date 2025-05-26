@@ -2,7 +2,7 @@ import serial
 import time
 
 # Serial configuration
-SERIAL_PORT = '/dev/ttyUSB0'
+SERIAL_PORT = '/dev/ttyUSB1'
 BAUD_RATE = 115200
 SERVO_ID = 1
 
