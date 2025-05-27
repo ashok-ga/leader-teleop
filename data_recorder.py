@@ -44,10 +44,10 @@ DEG_FACTOR    = 57295.7795
 NUM_JOINTS    = 6
 LOOP_HZ       = 200
 # gripper extremes
-pos_min, pos_max = 900, 1800
+pos_min, pos_max = 650, 1670
 GRIP_SPEED, GRIP_ACCEL = 7500, 0
 GD_LOW = 0
-GD_HIGH = 30
+GD_HIGH = 40
 # pre-built RS-485 helper
 def make_grip_pkt(pos: int) -> bytes:
     hdr = bytearray([0xFF,0xFF,SERVO_ID,0x08,0x03,0x2A])

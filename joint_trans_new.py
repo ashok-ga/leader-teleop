@@ -25,7 +25,7 @@ DEG_FACTOR    = 57295.7795         # Piper units per rad
 LOOP_HZ       = 300                 # leader→follower rate
 # gripper
 GRIP_ID       = 1
-POS_MIN, POS_MAX = 1700, 2600
+POS_MIN, POS_MAX = 710, 1670
 GRIP_SPEED    = 7500
 GRIP_ACCEL    = 0
 SEND_DELTA    = 3                   # send when ≥3 ticks change
