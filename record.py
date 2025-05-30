@@ -27,7 +27,7 @@ def record_with_preview(device="/dev/video2", outfile="scene1.mp4", duration=Non
             'jpegdec ! tee name=t ! queue ! '
             f'{record_branch} '
             't. ! queue ! videoconvert ! autovideosink sync=false'
-        )
+        ) 
     else:
         pipeline_str = (
             f'v4l2src device={device} ! image/jpeg,framerate=30/1,width=1280,height=720 ! '
@@ -81,9 +81,9 @@ def record_with_preview(device="/dev/video2", outfile="scene1.mp4", duration=Non
 
 if __name__ == "__main__":
     record_with_preview(
-        device="/dev/video2",
+        device="/dev/video9",
         outfile="scene1.mp4",
         duration=None,        # Or e.g. 60 for 1 minute auto-stop
-        live_view=True,       # Set False to record only, no preview
-        jetson=False          # Set True for Jetson hardware encoder
+        live_view=False,       # Set False to record only, no preview
+        jetson=True          # Set True for Jetson hardware encoder
     )

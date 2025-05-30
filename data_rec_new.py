@@ -26,7 +26,7 @@ import pyzed.sl as sl
 import serial
 from dynamixel_sdk import PortHandler, PacketHandler, GroupSyncRead
 from piper_sdk import C_PiperInterface_V2
-from gsn import GstreamerRecorder
+from leader_teleop.camera.gsn import GstreamerRecorder
 from blessed import Terminal
 
 # ───────── constants ─────────

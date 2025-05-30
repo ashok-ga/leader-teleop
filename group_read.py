@@ -5,10 +5,11 @@ from multiprocessing import Process, Queue
 from dynamixel_sdk import *
 from commands import DynamixelCommands  # Your command abstraction
 
-CONFIG_FILE = "robot_config.yaml"
+CONFIG_FILE = "/home/nvidia/leader-teleop/src/leader_teleop/config/robot_config.yaml"
 PORT_NAME = "/dev/ttyUSB0"
 BAUDRATE = 4000000
-POSITION_KEY = 'present_position'
+POSITION_KEY = "present_position"
+
 
 class SyncReader:
     def __init__(self, config):
@@ -21,23 +22,25 @@ class SyncReader:
         if not self.port_handler.setBaudRate(BAUDRATE):
             raise RuntimeError("❌ Failed to set baudrate")
 
-        self.motor_tables = config['motor_tables']
+        self.motor_tables = config["motor_tables"]
         self.joint_groups = defaultdict(list)
         self.pos_readers = {}
 
         # Build joint groups and SyncRead handlers
-        for joint in config['robot']['joints']:
-            motor_type = joint['motor_type']
+        for joint in config["robot"]["joints"]:
+            motor_type = joint["motor_type"]
             self.joint_groups[motor_type].append(joint)
 
         for motor_type, joints in self.joint_groups.items():
             table = self.motor_tables[motor_type]
             reader = GroupSyncRead(
-                self.port_handler, self.packet_handler,
-                table[POSITION_KEY], table['position_bytes']
+                self.port_handler,
+                self.packet_handler,
+                table[POSITION_KEY],
+                table["position_bytes"],
             )
             for joint in joints:
-                reader.addParam(joint['id'])
+                reader.addParam(joint["id"])
             self.pos_readers[motor_type] = reader
 
     def read_all(self):
@@ -52,22 +55,26 @@ class SyncReader:
                 continue
 
             for joint in joints:
-                dxl_id = joint['id']
-                raw = reader.getData(dxl_id, table[POSITION_KEY], table['position_bytes'])
-                pos = int.from_bytes(raw.to_bytes(table['position_bytes'], 'little'), 'little')
+                dxl_id = joint["id"]
+                raw = reader.getData(
+                    dxl_id, table[POSITION_KEY], table["position_bytes"]
+                )
+                pos = int.from_bytes(
+                    raw.to_bytes(table["position_bytes"], "little"), "little"
+                )
 
                 # Convert to angle
                 if pos is not None:
-                    if motor_type in ['XL430', 'XM430']:
+                    if motor_type in ["XL430", "XM430"]:
                         angle = (pos / 4095.0) * 360.0
-                    elif motor_type == 'XL320':
+                    elif motor_type == "XL320":
                         angle = (pos / 1023.0) * 300.0
                     else:
                         angle = pos  # Raw fallback
                 else:
                     angle = None
 
-                all_results.append((joint['name'], pos, angle))
+                all_results.append((joint["name"], pos, angle))
         return all_results
 
     def shutdown(self):
@@ -75,7 +82,7 @@ class SyncReader:
 
 
 def load_config():
-    with open(CONFIG_FILE, 'r') as f:
+    with open(CONFIG_FILE, "r") as f:
         return yaml.safe_load(f)
 
 
@@ -89,7 +96,7 @@ def reader_worker(queue: Queue):
         while True:
             if not queue.empty():
                 cmd = queue.get()
-                if cmd == 'exit':
+                if cmd == "exit":
                     break
 
             # Read and print
@@ -113,9 +120,9 @@ def main():
             time.sleep(0.1)
     except KeyboardInterrupt:
         print("🛑 Stopping reader...")
-        queue.put('exit')
+        queue.put("exit")
         p.join()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
