@@ -214,7 +214,7 @@ if __name__ == "__main__":
     recorder1 = GstreamerCameraRecorder(
         sync_buffer=dsb.get_buffer("scene_camera_bottom"),
         output_file="camera_recorded1.mp4",
-        device="/dev/video2",
+        device="/dev/video0",
         width=1280,
         height=720,
         fps=30,
