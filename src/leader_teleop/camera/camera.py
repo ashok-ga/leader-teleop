@@ -52,7 +52,7 @@ class CameraPipelineManager:
             self.init_pipelines(output_dir=output_dir)
 
         for (cam_type, alias), recorder in self.recorders.items():
-            recorder.arm()
+            recorder._toggle_valve()
 
     def stop_recording(self):
         for (cam_type, alias), recorder in self.recorders.items():
