@@ -14,8 +14,11 @@ CAN_IFACE = "can0"
 
 piper = C_PiperInterface_V2(CAN_IFACE)
 piper.ConnectPort()
-while not piper.EnablePiper():
-    time.sleep(0.005)
+
+piper.EnableArm()
+
+# while not piper.EnablePiper():
+#     time.sleep(0.005)
 for i in range(1, NUM_JOINTS + 1):
     piper.JointMaxAccConfig(i, PIPER_ACCEL)
     piper.MotorMaxSpdSet(i, PIPER_SPEED)
@@ -59,8 +62,11 @@ def piper_sender_thread(event_stop, data_sync_buffer, loop_hz=200.0):
 
         buf = data_sync_buffer.get_buffer("diffs")
         diffs = buf[-1][1] if len(buf) > 0 else {}
+
+        # print(f"Joint diffs: {diffs}")
         for idx, name in enumerate(names):
             d = -diffs.get(name, 0.0) if idx in (2, 4) else diffs.get(name, 0.0)
+            d = min(d, 0.0) if idx in (2, 4) else max(d, 0.0)
             cmds.append(int(d * DEG_FACTOR + 0.5))
 
         if cmds != last_cmds:
@@ -107,7 +113,7 @@ def dry_run():
         {
             "joint_1": 0.0,
             "joint_2": 0.8,
-            "joint_3": -0.8,
+            "joint_3": 0.8,
             "joint_4": 0.0,
             "joint_5": 0.0,
             "joint_6": 0.0,

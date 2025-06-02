@@ -1,4 +1,5 @@
 from collections import deque
+from logging import warn, warning
 import threading
 import time
 
@@ -56,14 +57,14 @@ class DataSyncBuffer:
             for sensor in target_sensors:
                 buf = self.buffers[sensor]
                 closest = min(buf, key=lambda x: abs(x[0] - base_ts))
-                print(
-                    f"Sensor: {sensor}, Closest timestamp: {closest[0]}, Base timestamp: {base_ts}"
-                )
+                # print(
+                #     f"Sensor: {sensor}, Closest timestamp: {closest[0]}, Base timestamp: {base_ts}"
+                # )
                 if abs(closest[0] - base_ts) > self.tolerance:
-                    print(
-                        f"Skipping {sensor} due to timestamp tolerance: {abs(closest[0] - base_ts)} > {self.tolerance}"
+                    warning(
+                        f"Breach of tolerance for {sensor}: {abs(closest[0] - base_ts)} > {self.tolerance}"
                     )
-                    return None
+                    # return None
                 result[sensor] = closest[1]
             return result
 

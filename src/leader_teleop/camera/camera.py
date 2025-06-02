@@ -12,16 +12,21 @@ from pathlib import Path
 import gi
 from gi.repository import Gst, GLib
 
+import multiprocessing as mp
+
 gi.require_version("Gst", "1.0")
+
+Gst.init(None)
 
 
 class CameraPipelineManager:
-    def __init__(self, data_sync_buffer):
+    def __init__(self, data_sync_buffer, output_dir="recordings"):
         self.data_sync_buffer = data_sync_buffer
         self.camera_config = device_config["cameras"]
         self.recorders: Dict[Tuple, GstreamerCameraRecorder] = (
             {}
         )  # (cam_type, alias) -> GstreamerCameraRecorder
+        self.init_pipelines(output_dir=output_dir)
 
     def init_pipelines(self, output_dir):
         output_dir = Path(output_dir)
@@ -29,36 +34,45 @@ class CameraPipelineManager:
 
         for cam_type, cameras in self.camera_config.items():
             for alias, cam in cameras.items():
-                output_file = output_dir / f"{alias}.mp4"
+                output_pattern = output_dir / f"{alias}_%d.mp4"
                 recorder = GstreamerCameraRecorder(
                     sync_buffer=self.data_sync_buffer.get_buffer(alias),
-                    output_file=str(output_file),
+                    output_pattern=output_pattern,
                     device=cam["device"],
                     width=cam["width"],
                     height=cam["height"],
                     caps=cam["caps"],
-                    verbose=True,
+                    verbose=False,
                 )
                 self.recorders[(cam_type, alias)] = recorder
 
         print(f"📹 Starting camera recording for {len(self.recorders)} cameras.")
-        time.sleep(2)  # Allow time for pipelines to initialize
+        time.sleep(3)  # Allow time for pipelines to initialize
 
         print(f"📂 Camera pipelines initialized. Output directory: {output_dir}")
 
-    def start_recording(self, output_dir=None):
-        output_dir = Path(output_dir) if output_dir else Path("recordings")
+    def start_recording(self):
         if not self.recorders:
-            self.init_pipelines(output_dir=output_dir)
+            print("No camera recorders initialized. Please call init_pipelines first.")
+            return
 
         for (cam_type, alias), recorder in self.recorders.items():
-            recorder.arm()
+            if not recorder.is_recording():
+                print(f"Starting recording for {alias} ({cam_type})")
+                recorder.start_recording()
+            else:
+                print(f"Recorder for {alias} ({cam_type}) is already running.")
 
     def stop_recording(self):
         for (cam_type, alias), recorder in self.recorders.items():
             if hasattr(recorder, "shutdown"):
+                recorder.stop_recording()
+
+    def shutdown(self):
+        for (cam_type, alias), recorder in self.recorders.items():
+            if hasattr(recorder, "shutdown"):
                 recorder.shutdown()
-        self.recorders.clear()
+        print("All camera pipelines shut down.")
 
 
 def dry_run():
@@ -74,13 +88,15 @@ def dry_run():
             cam_buffers.append(alias)
 
     data_sync_buffer = DataSyncBuffer(cam_buffers)
-    camera_pipeline_manager = CameraPipelineManager(data_sync_buffer)
+
+    output_dir = "temp_recording"
+    camera_pipeline_manager = CameraPipelineManager(
+        data_sync_buffer, output_dir=output_dir
+    )
 
     # Start recording to a temporary directory
-    output_dir = Path("temp_recording")
-    camera_pipeline_manager.init_pipelines(output_dir=str(output_dir))
     camera_pipeline_manager.start_recording()
-    time.sleep(10)  # Simulate some recording time
+    time.sleep(5)  # Simulate some recording time
 
     for (cam_type, alias), recorder in camera_pipeline_manager.recorders.items():
         buffer_data = list(data_sync_buffer.get_buffer(alias).data)[-10:]
@@ -92,6 +108,8 @@ def dry_run():
 
     # Stop recording
     camera_pipeline_manager.stop_recording()
+
+    camera_pipeline_manager.shutdown()
 
     print(f"Recording stopped. Files saved in: {output_dir}")
 

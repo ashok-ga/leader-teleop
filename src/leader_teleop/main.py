@@ -40,40 +40,52 @@ def main():
 
     data_sync_buffer = DataSyncBuffer(sensors=data_buffers)
 
-    camera_pipeline_manager = None
-    camera_pipeline_manager = CameraPipelineManager(data_sync_buffer)
-
     threads = [
         threading.Thread(
             target=reader_thread,
-            args=(event_stop, data_sync_buffer),
+            args=(event_stop, data_sync_buffer, 100.0),
             daemon=False,
         ),
         threading.Thread(
             target=piper_reader_thread,
-            args=(event_stop, data_sync_buffer),
+            args=(event_stop, data_sync_buffer, 200.0),
             daemon=True,
         ),
         threading.Thread(
             target=piper_sender_thread,
-            args=(event_stop, data_sync_buffer),
+            args=(event_stop, data_sync_buffer, 200.0),
             daemon=True,
         ),
         threading.Thread(
             target=gripper_thread,
-            args=(event_stop, data_sync_buffer),
+            args=(event_stop, data_sync_buffer, 100.0),
             daemon=True,
         ),
     ]
+
+    session_name = input("Enter session name: ")
+
+    outptut_dir = os.path.join(
+        "recordings", f"{session_name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}"
+    )
+
+    camera_pipeline_manager = None
+    camera_pipeline_manager = CameraPipelineManager(
+        data_sync_buffer,
+        output_dir=outptut_dir,
+    )
 
     for t in threads:
         t.start()
 
     term = Terminal()
     try:
-        session_name = input("Enter session name: ")
         buffer_recorder = BufferRecorder(
-            session_name, data_sync_buffer, camera_pipeline_manager
+            session_name,
+            data_sync_buffer,
+            camera_pipeline_manager,
+            output_dir=outptut_dir,
+            poll_frequency=20.0,
         )
         with term.cbreak():
             while True:

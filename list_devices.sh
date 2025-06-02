@@ -19,13 +19,17 @@ done
 
 
 
-echo "Listing connected ttyUSB devices..."
+echo "Listing connected devices..."
 echo ""
 
-for dev in /dev/ttyUSB*; do
+for dev in /dev/tty*; do
     [ -e "$dev" ] || continue
 
-    echo "Device: $dev"
-    udevadm info --query=property --name="$dev" | grep -E 'DEVNAME|ID_SERIAL|ID_VENDOR_ID|ID_MODEL_ID|ID_MODEL|ID_VENDOR'
-    echo ""
+    info=$(udevadm info --query=property --name="$dev")
+
+    if echo "$info" | grep -qEi 'CH341|USB'; then
+        echo "Device: $dev"
+        echo "$info" | grep -E 'DEVNAME|ID_SERIAL|ID_VENDOR_ID|ID_MODEL_ID|ID_MODEL|ID_VENDOR'
+        echo ""
+    fi
 done

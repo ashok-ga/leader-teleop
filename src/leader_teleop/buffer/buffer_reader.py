@@ -19,28 +19,44 @@ class BufferReaderThread(threading.Thread):
         self.output_file = output_file
         self.stop_event = stop_event
         self.poll_interval = 1.0 / poll_frequency
+        self.initial_poll_interval = self.poll_interval / 2
         self.headers_written = False
+        self.buffers_to_write = [
+            "ServoCmd",
+            "ServoPos",
+            "eef_pose",
+            "scene_camera_bottom",
+            "scene_camera_top",
+            "wrist_camera_right",
+        ]
 
     def run(self):
+        self.sync_buffer.clear()
+
+        # Wait for all three cameras to have at least one frame
+        required_cams = [buf for buf in self.buffers_to_write if "camera" in buf]
+        print("[BufferReaderThread] Waiting for all camera streams...")
+        while not self.stop_event.is_set():
+            # Assume each buffer is a list of (timestamp, data) tuples
+            all_present = all(
+                self.sync_buffer.buffers.get(cam)
+                and len(self.sync_buffer.buffers[cam]) > 0
+                for cam in required_cams
+            )
+            if all_present:
+                print("[BufferReaderThread] All camera streams detected.")
+                break
+            time.sleep(self.initial_poll_interval)  # Poll at 20Hz while waiting
+
+        start_time = time.time()
+        # Start CSV writing after all cameras have at least one frame
         with open(self.output_file, mode="w", newline="") as csvfile:
             writer = csv.writer(csvfile)
 
             while not self.stop_event.is_set():
-                print("here")
-                synced_data = self.sync_buffer.get_synced(
-                    [
-                        "ServoCmd",
-                        "ServoPos",
-                        "eef_pose",
-                        "scene_camera_bottom",
-                        "scene_camera_top",
-                        "wrist_camera_right",
-                    ]
-                )
-
+                synced_data = self.sync_buffer.get_synced()
                 assert synced_data is not None, "No synced data available"
 
-                # print(f"Synced data: {synced_data}")
                 if synced_data:
                     if not self.headers_written:
                         headers = [
@@ -66,7 +82,8 @@ class BufferReaderThread(threading.Thread):
                         *list(synced_data["eef_pose"].values()),
                     ]
                     writer.writerow(row)
-
                 time.sleep(self.poll_interval)
 
-        self.sync_buffer.clear()
+        print(
+            f"Finished writing to {self.output_file}, Duration: {time.time() - start_time:.2f} seconds"
+        )

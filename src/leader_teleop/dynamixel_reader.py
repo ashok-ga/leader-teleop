@@ -91,10 +91,9 @@ class SyncReader:
         self.port.closePort()
 
 
-def reader_thread(event_stop, data_sync_buffer, poll_frequency=333.0):
+def reader_thread(event_stop, data_sync_buffer, poll_frequency=100.0):
     rd = SyncReader()
     base = rd.read_all()
-    print("Base positions:", base)
     interval = 1.0 / poll_frequency
 
     while not event_stop.is_set():

@@ -13,7 +13,7 @@ class BufferRecorder:
         session_id,
         sync_buffer,
         camera_pipeline_manager: CameraPipelineManager,
-        output_dir="recordings",
+        output_dir,
         poll_frequency=20.0,
     ):
         self.session_id = session_id
@@ -32,18 +32,15 @@ class BufferRecorder:
             print("⚠️ Recording already in progress.")
             return
 
-        self.session_counter += 1
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_name = f"{self.session_id}_{self.session_counter:03d}_{timestamp}"
-        session_path = os.path.join(self.output_dir, session_name)
-        os.makedirs(session_path, exist_ok=True)
+        # Start data buffer logging
+        output_file = os.path.join(self.output_dir, f"data_{self.session_counter}.csv")
 
         # Start camera pipelines if available
         if self.camera_pipeline_manager:
-            self.camera_pipeline_manager.start_recording(output_dir=session_path)
+            self.camera_pipeline_manager.start_recording()
 
-        # Start data buffer logging
-        output_file = os.path.join(session_path, "data.csv")
+        # time.sleep(0.3)
+
         self.stop_event = threading.Event()
         self.thread = BufferReaderThread(
             self.sync_buffer,
@@ -52,9 +49,13 @@ class BufferRecorder:
             poll_frequency=self.poll_frequency,
         )
         self.thread.start()
-        print(f"📁 Started recording session: {session_path}")
+        print(f"📁 Started recording session: {self.session_counter}")
 
     def stop_recording(self):
+        if self.camera_pipeline_manager:
+            self.camera_pipeline_manager.stop_recording()
+            print("🎥 Camera recording stopped.")
+
         if self.thread and self.thread.is_alive():
             self.stop_event.set()
             self.thread.join()
@@ -62,6 +63,4 @@ class BufferRecorder:
         else:
             print("⚠️ No buffer recording in progress.")
 
-        if self.camera_pipeline_manager:
-            self.camera_pipeline_manager.stop_recording()
-            print("🎥 Camera recording stopped.")
+        self.session_counter += 1

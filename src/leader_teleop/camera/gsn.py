@@ -30,7 +30,7 @@ class GstreamerCameraRecorder:
         caps = caps.upper()
         if caps == "MJPG":
             src_caps = f"image/jpeg,width={width},height={height},framerate={fps}/1"
-            decode_chain = "jpegparse ! nvv4l2decoder ! "
+            decode_chain = "jpegparse ! nvv4l2decoder mjpeg=1 ! "
         elif caps in {"YUY2", "YUYV"}:
             src_caps, decode_chain = (
                 f"video/x-raw,format=YUY2,width={width},height={height},framerate={fps}/1",
@@ -51,15 +51,15 @@ class GstreamerCameraRecorder:
             # "valignment=top halignment=left shaded-background=true "
             # 'font-desc="Sans, 24" ! '
             # ───────── system-memory → NVMM ─────────
-            "nvvidconv nvbuf-memory-type=0 ! video/x-raw(memory:NVMM),format=I420 ! "
+            "nvvidconv ! video/x-raw(memory:NVMM),format=NV12 ! "
             # ───────── HW H.264 encode + rotation ─────────
-            "nvv4l2h264enc maxperf-enable=1 control-rate=1 bitrate=6000000 "
+            "nvv4l2h264enc maxperf-enable=1 control-rate=1 bitrate=8000000 "
             "iframeinterval=1 insert-sps-pps=1 ! "
             "h264parse name=parser ! "
-            "splitmuxsink name=smux muxer-factory=mp4mux "
+            "splitmuxsink name=smux muxer=mp4mux "
             "send-keyframe-requests=true "
             "max-size-time=0 max-size-bytes=0 "
-            f"location={output_pattern}"
+            f"location={output_pattern} async-finalize=false"
         )
 
         if verbose:
@@ -87,6 +87,8 @@ class GstreamerCameraRecorder:
         signal.signal(signal.SIGINT, lambda *_: self.shutdown())
         signal.signal(signal.SIGTERM, lambda *_: self.shutdown())
 
+        self.recording = False
+
     # ───────────────────────── helpers ─────────────────────────
     def _on_format_location(self, mux, idx):
         # idx is the split index starting at 0 – build your own file name here
@@ -95,12 +97,14 @@ class GstreamerCameraRecorder:
 
     def _add_buffer_probe(self):
         parser = self._pipeline.get_by_name("parser")
-        # parser.add_probe(Gst.PadProbeType.BUFFER, self._probe_cb)
+        parser_src = parser.get_static_pad("sink")
 
-    def _probe_cb(self, pad, info):
-        if self.sync_buffer and (buf := info.get_buffer()):
+        def _probe_cb(pad, info):
+            buf = info.get_buffer()
             self.sync_buffer.add(buf.pts / Gst.SECOND)
-        return Gst.PadProbeReturn.OK
+            return Gst.PadProbeReturn.OK
+
+        parser_src.add_probe(Gst.PadProbeType.BUFFER, _probe_cb)
 
     def _on_bus(self, bus, msg):
         t = msg.type
@@ -112,30 +116,6 @@ class GstreamerCameraRecorder:
             if self._verbose:
                 print("✅ EOS received")
             self._finalise()
-
-    # ─────────────────── public control methods ───────────────────
-    def arm(self):  # open / close the valve
-        drop = self._gate.get_property("drop")
-        print(drop)
-        self._gate.set_property("drop", not drop)
-        drop = self._gate.get_property("drop")
-        print(drop)
-        print("🔓 Valve", "OPEN" if not drop else "CLOSED")
-
-    def rotate(self):
-        self._force_key_unit()
-        # self._smux.emit("split-after")  # request a key-frame
-
-        # # Send EOS *only* to splitmuxsink so it flushes & closes cleanly
-        # self._smux.get_static_pad("sink").send_event(Gst.Event.new_eos())
-
-        # # Wait for the element to post its EOS message
-        # self._bus.timed_pop_filtered(Gst.CLOCK_TIME_NONE, Gst.MessageType.EOS)
-
-        GLib.timeout_add(
-            40,  # 40 ms ≈ 1-2 frames @ 30 fps
-            lambda *_: (self._smux.emit("split-after") or False),
-        )
 
     # ───────────────────────── teardown ─────────────────────────
     def shutdown(self):
@@ -180,72 +160,105 @@ class GstreamerCameraRecorder:
     def start_recording(self):
         """Start recording by opening the valve."""
         self._gate.set_property("drop", False)
+        self._is_recording = True
         print("🔴 Recording started")
 
-    def stop_recording(self):
-        """Stop recording by closing the valve."""
-        self.rotate()
-        self._gate.set_property("drop", True)
-        print("🟢 Recording stopped")
+    def is_recording(self):
+        return self.recording
+
+    def stop_recording(self, final=False):
+        """
+        If final=True is not given for the last recording, it will be unplayable
+        because the splitmuxsink will not write the moov atom.
+        """
+        self._force_key_unit()  # next frame is an IDR
+        self._smux.emit("split-after")  # close current file cleanly
+
+        self.recording = False
+
+        if final:
+            # keep the valve OPEN so EOS can travel downstream
+            self._pipeline.send_event(Gst.Event.new_eos())  # whole pipe
+            return
+
+        # not final: close valve after ≥1 frame
+        GLib.timeout_add(
+            40, lambda *_: (self._gate.set_property("drop", True) or False)
+        )
 
 
 # ─────────────────────────── demo ───────────────────────────
 if __name__ == "__main__":
-    dsb = DataSyncBuffer(["scene_camera_bottom", "scene_camera_top"])
+    dsb = DataSyncBuffer(
+        ["scene_camera_bottom", "scene_camera_top", "wrist_camera_right"]
+    )
 
     rec1 = GstreamerCameraRecorder(
         sync_buffer=dsb.get_buffer("scene_camera_bottom"),
-        output_pattern="bot_%03d.mp4",
+        output_pattern="bot_%d.mp4",
         device="/dev/video0",
         width=1280,
         height=720,
-        fps=30,
+        fps=15,
         caps="MJPG",
     )
     rec2 = GstreamerCameraRecorder(
         sync_buffer=dsb.get_buffer("scene_camera_top"),
-        output_pattern="top_%03d.mp4",
-        device="/dev/video6",
+        output_pattern="top_%d.mp4",
+        device="/dev/video4",
         width=1280,
         height=720,
-        fps=30,
+        fps=15,
         caps="MJPG",
         verbose=False,
     )
+    rec3 = GstreamerCameraRecorder(
+        sync_buffer=dsb.get_buffer("wrist_camera_right"),
+        output_pattern="right_%d.mp4",
+        device="/dev/video8",
+        width=2560,
+        height=720,
+        fps=30,
+        caps="YUYV",
+        verbose=False,
+    )
 
-    time.sleep(2)  # camera warm-up
+    time.sleep(3)  # camera warm-up
 
     rec1.start_recording()  # open the valve, start recording
     rec2.start_recording()
+    rec3.start_recording()
 
-    time.sleep(5)
+    time.sleep(10)
 
-    rec1.stop_recording()  # close the valve, stop recording
+    # rec1.stop_recording()  # close the valve, stop recording
+    # rec2.stop_recording()
+
+    # time.sleep(1)  # wait for the splitmuxsink to finish writing
+
+    # rec1.start_recording()  # open the valve again, start recording
+    # rec2.start_recording()
+
+    # print("recoding 2 now")
+
+    # time.sleep(5)
+
+    # rec1.stop_recording()  # close the valve, stop recording
+    # rec2.stop_recording()
+
+    # time.sleep(1)
+
+    # rec1.start_recording()
+    # rec2.start_recording()
+
+    # time.sleep(3.1)
+
+    rec1.stop_recording()  # close the valve, stop recording and finalize
     rec2.stop_recording()
-
-    time.sleep(2)  # wait for the splitmuxsink to finish writing
-
-    rec1.start_recording()  # open the valve again, start recording
-    rec2.start_recording()
-
-    print("recoding 2 now")
-
-    time.sleep(5)
-
-    rec1.stop_recording()  # close the valve, stop recording
-    rec2.stop_recording()
-
-    time.sleep(1)
-
-    rec1.start_recording()
-    rec2.start_recording()
-
-    time.sleep(1)
-
-    rec1.stop_recording()
-    rec2.stop_recording()
+    rec3.stop_recording()
 
     rec1.shutdown()
     rec2.shutdown()
+    rec3.shutdown()
 
     print(dsb.get_buffer("scene_camera_bottom").data)
