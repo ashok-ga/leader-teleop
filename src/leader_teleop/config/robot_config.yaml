@@ -67,16 +67,16 @@ devices:
 
   cameras:
     scene:
-      # - alias: "scene_camera_bottom"
-      #   device: "/dev/video0"
-      #   width: 1280
-      #   height: 720
+      - alias: "scene_camera_bottom"
+        device: "/dev/video0"
+        width: 1280
+        height: 720
       - alias: "scene_camera_top"
-        device: "/dev/video4"
+        device: "/dev/video6"
         width: 1280
         height: 720
     wrist:
       - alias: "wrist_camera_right"
-        device: "/dev/video8"
+        device: "/dev/video4"
         width: 2560
         height: 720

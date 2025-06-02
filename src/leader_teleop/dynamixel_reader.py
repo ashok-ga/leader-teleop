@@ -64,12 +64,9 @@ class SyncReader:
             length = info["length"]
             for j in info["joints"]:
                 raw = reader.getData(j["id"], addr, length)
-                if j["name"] == "gripper":
-                    val = raw
-                else:
-                    scale = 4095.0 if j["motor_type"] in ["XL430", "XM430"] else 1023.0
-                    rng = 360.0 if j["motor_type"] in ["XL430", "XM430"] else 300.0
-                    val = (raw / scale) * rng
+                scale = 4095.0 if j["motor_type"] in ["XL430", "XM430"] else 1023.0
+                rng = 360.0 if j["motor_type"] in ["XL430", "XM430"] else 300.0
+                val = (raw / scale) * rng
                 val_rad = math.radians(val)
                 # Apply moving average only for joints 1–6 (not gripper)
                 if j["name"] != "gripper":
@@ -84,7 +81,7 @@ class SyncReader:
                     avg_val = sum(buf[:n]) / n
                     out[j["name"]] = avg_val
                 else:
-                    out[j["name"]] = val_rad if j["name"] != "gripper" else val
+                    out[j["name"]] = val
         return out
 
     def shutdown(self):
@@ -99,6 +96,8 @@ def reader_thread(event_stop, data_sync_buffer, poll_frequency=100.0):
     while not event_stop.is_set():
         cur = rd.read_all()
         diffs = {k: cur.get(k, base[k]) - base[k] for k in base}
+        # print("Diffs:", diffs)
+
         data_sync_buffer.get_buffer("diffs").add(diffs)
         time.sleep(interval)
 

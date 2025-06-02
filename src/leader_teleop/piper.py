@@ -66,7 +66,15 @@ def piper_sender_thread(event_stop, data_sync_buffer, loop_hz=200.0):
         # print(f"Joint diffs: {diffs}")
         for idx, name in enumerate(names):
             d = -diffs.get(name, 0.0) if idx in (2, 4) else diffs.get(name, 0.0)
-            d = min(d, 0.0) if idx in (2, 4) else max(d, 0.0)
+            if idx == 1:
+                d = max(d, 0.0)
+            elif idx == 2:
+                d = min(d, 0.0)
+            # if idx in (2, 4):
+            #     d = min(d, 0.0)
+            # elif idx in (1, 3):
+            #     d = max(d, 0.0)
+
             cmds.append(int(d * DEG_FACTOR + 0.5))
 
         if cmds != last_cmds:

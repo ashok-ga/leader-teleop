@@ -5,10 +5,10 @@ from leader_teleop.config.utils import device_config
 
 SERVO_ID = 1
 # gripper extremes
-pos_min, pos_max = 650, 1670
+pos_min, pos_max = 730, 1730
 GRIP_SPEED, GRIP_ACCEL = 7500, 0
 GD_LOW = 0
-GD_HIGH = 40
+GD_HIGH = 25
 RS485_BAUD = 115200
 
 ser = serial.Serial(device_config["rs485_device"], RS485_BAUD, timeout=0.01)
@@ -82,6 +82,7 @@ def gripper_thread(event_stop, data_sync_buffer, poll_frequency=200.0):
             else {}
         )
         gd = buf.get("gripper", 0.0)
+        print("Command Pos", gd)
         data_sync_buffer.get_buffer("ServoCmd").add(gd)
 
         # Clamp and map to position
@@ -93,6 +94,7 @@ def gripper_thread(event_stop, data_sync_buffer, poll_frequency=200.0):
             last_pos = pos
 
         actual_pos = read_servo_position(ser, SERVO_ID)
+        print("Actual Servo Position:", actual_pos)
         normalized_pos = min(
             max((actual_pos - pos_min) / (pos_max - pos_min), 0.0), 1.0
         )

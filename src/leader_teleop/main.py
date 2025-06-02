@@ -43,7 +43,7 @@ def main():
     threads = [
         threading.Thread(
             target=reader_thread,
-            args=(event_stop, data_sync_buffer, 100.0),
+            args=(event_stop, data_sync_buffer, 200.0),
             daemon=False,
         ),
         threading.Thread(
@@ -112,6 +112,8 @@ def main():
     event_stop.set()
     for t in threads:
         t.join()
+
+    camera_pipeline_manager.shutdown()
 
     print("✅ Goodbye.")
 
