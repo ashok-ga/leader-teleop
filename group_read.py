@@ -6,7 +6,7 @@ from dynamixel_sdk import *
 from commands import DynamixelCommands  # Your command abstraction
 
 CONFIG_FILE = "/home/nvidia/leader-teleop/src/leader_teleop/config/robot_config.yaml"
-PORT_NAME = "/dev/ttyUSB0"
+PORT_NAME = "/dev/ttyUSB2"
 BAUDRATE = 4000000
 POSITION_KEY = "present_position"
 

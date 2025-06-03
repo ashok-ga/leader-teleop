@@ -62,21 +62,27 @@ robot:
       max: 4095
 
 devices:
-  dxl_device: "/dev/ttyUSB1"
-  rs485_device: "/dev/ttyCH341USB0"
+  right_dxl_device: "/dev/ttyUSB1"
+  left_dxl_device: "/dev/ttyUSB2"
+  right_rs485_device: "/dev/ttyUSB0"
+  left_rs485_device: "/dev/ttyUSB4"
 
   cameras:
     scene:
       - alias: "scene_camera_bottom"
-        device: "/dev/video0"
+        device: "/dev/video2"
         width: 1280
         height: 720
       - alias: "scene_camera_top"
-        device: "/dev/video6"
+        device: "/dev/video8"
         width: 1280
         height: 720
     wrist:
       - alias: "wrist_camera_right"
-        device: "/dev/video4"
+        device: "/dev/video10"
+        width: 2560
+        height: 720
+      - alias: "wrist_camera_left"
+        device: "/dev/video6"
         width: 2560
         height: 720

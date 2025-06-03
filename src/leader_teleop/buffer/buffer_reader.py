@@ -22,12 +22,16 @@ class BufferReaderThread(threading.Thread):
         self.initial_poll_interval = self.poll_interval / 2
         self.headers_written = False
         self.buffers_to_write = [
-            "ServoCmd",
-            "ServoPos",
-            "eef_pose",
+            "right_servo_cmds",
+            "right_servo_pos",
+            "left_servo_cmds",
+            "left_servo_pos",
+            "right_eef_pose",
+            "left_eef_pose",
             "scene_camera_bottom",
             "scene_camera_top",
             "wrist_camera_right",
+            "wrist_camera_left",
         ]
 
     def run(self):
@@ -61,14 +65,22 @@ class BufferReaderThread(threading.Thread):
                     if not self.headers_written:
                         headers = [
                             "timestamp",
-                            "ServoCmd",
-                            "ServoPos",
-                            "x",
-                            "y",
-                            "z",
-                            "qx",
-                            "qy",
-                            "qz",
+                            "right_servo_cmds",
+                            "right_servo_pos",
+                            "right_x",
+                            "right_y",
+                            "right_z",
+                            "right_qx",
+                            "right_qy",
+                            "right_qz",
+                            "left_servo_cmds",
+                            "left_servo_pos",
+                            "left_x",
+                            "left_y",
+                            "left_z",
+                            "left_qx",
+                            "left_qy",
+                            "left_qz",
                         ]
                         writer.writerow(headers)
                         self.headers_written = True
@@ -77,9 +89,12 @@ class BufferReaderThread(threading.Thread):
                         self.sync_buffer.buffers[s][-1][0] for s in synced_data
                     )
                     row = [timestamp] + [
-                        synced_data["ServoCmd"],
-                        synced_data["ServoPos"],
-                        *list(synced_data["eef_pose"].values()),
+                        synced_data["right_servo_cmds"],
+                        synced_data["right_servo_pos"],
+                        *list(synced_data["right_eef_pose"].values()),
+                        synced_data["left_servo_cmds"],
+                        synced_data["left_servo_pos"],
+                        *list(synced_data["left_eef_pose"].values()),
                     ]
                     writer.writerow(row)
                 time.sleep(self.poll_interval)

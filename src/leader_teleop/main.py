@@ -4,15 +4,18 @@ import time
 from datetime import datetime
 
 from blessed import Terminal
-from leader_teleop.dynamixel_reader import reader_thread
+from leader_teleop.dynamixel_reader import (
+    dynamixel_init,
+    dynamixel_shutdown,
+)
 from leader_teleop.piper import (
     NUM_JOINTS,
     PIPER_ACCEL,
     PIPER_SPEED,
-    piper_reader_thread,
-    piper_sender_thread,
+    piper_init,
+    piper_shutdown,
 )
-from gripper import SERVO_ID, gripper_thread
+from gripper import SERVO_ID, gripper_init, gripper_shutdown
 from leader_teleop.camera.camera import (
     CameraPipelineManager,
 )  # Optional: can keep it if it does something else
@@ -21,53 +24,31 @@ from leader_teleop.buffer.buffer_recorder import (
     BufferRecorder,
 )  # <- Your BufferRecorder class
 
-# ───────── shared state & stop event ─────────
-event_stop = threading.Event()
-
 
 def main():
 
     # Sensors writing to DataSyncBuffer
     data_buffers = [
-        "ServoCmd",
-        "ServoPos",
-        "diffs",
-        "eef_pose",
+        "right_servo_cmds",
+        "right_servo_pos",
+        "left_servo_cmds",
+        "left_servo_pos",
+        "right_diffs",
+        "left_diffs",
+        "right_eef_pose",
+        "left_eef_pose",
         "scene_camera_bottom",
         "scene_camera_top",
         "wrist_camera_right",
+        "wrist_camera_left",
     ]  # adjust to match actual names used in buffer
 
-    data_sync_buffer = DataSyncBuffer(sensors=data_buffers)
-
-    threads = [
-        threading.Thread(
-            target=reader_thread,
-            args=(event_stop, data_sync_buffer, 200.0),
-            daemon=False,
-        ),
-        threading.Thread(
-            target=piper_reader_thread,
-            args=(event_stop, data_sync_buffer, 200.0),
-            daemon=True,
-        ),
-        threading.Thread(
-            target=piper_sender_thread,
-            args=(event_stop, data_sync_buffer, 200.0),
-            daemon=True,
-        ),
-        threading.Thread(
-            target=gripper_thread,
-            args=(event_stop, data_sync_buffer, 100.0),
-            daemon=True,
-        ),
-    ]
-
     session_name = input("Enter session name: ")
-
     outptut_dir = os.path.join(
         "recordings", f"{session_name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}"
     )
+
+    data_sync_buffer = DataSyncBuffer(sensors=data_buffers)
 
     camera_pipeline_manager = None
     camera_pipeline_manager = CameraPipelineManager(
@@ -75,8 +56,9 @@ def main():
         output_dir=outptut_dir,
     )
 
-    for t in threads:
-        t.start()
+    pr, pl = piper_init(data_sync_buffer)
+    dr, dl = dynamixel_init(data_sync_buffer)
+    gr, gl = gripper_init(data_sync_buffer)
 
     term = Terminal()
     try:
@@ -109,11 +91,10 @@ def main():
     except KeyboardInterrupt:
         print("\nInterrupted; ending.")
 
-    event_stop.set()
-    for t in threads:
-        t.join()
-
     camera_pipeline_manager.shutdown()
+    piper_shutdown(pr, pl)
+    dynamixel_shutdown(dr, dl)
+    gripper_shutdown(gr, gl)
 
     print("✅ Goodbye.")
 

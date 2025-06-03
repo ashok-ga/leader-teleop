@@ -85,8 +85,10 @@ def load_config_and_resolve_devices(config_path):
         config = yaml.safe_load(f)
 
     resolved = {
-        "dxl_device": config["devices"].get("dxl_device"),
-        "rs485_device": config["devices"].get("rs485_device"),
+        "right_dxl_device": config["devices"].get("right_dxl_device"),
+        "right_rs485_device": config["devices"].get("right_rs485_device"),
+        "left_dxl_device": config["devices"].get("left_dxl_device"),
+        "left_rs485_device": config["devices"].get("left_rs485_device"),
         "cameras": {"scene": {}, "wrist": {}},
     }
 
@@ -124,8 +126,10 @@ config = yaml.safe_load(open(CONFIG_PATH, "r"))
 if __name__ == "__main__":
     resolved = device_config
 
-    print("Dynamixel Device:", resolved["dxl_device"])
-    print("RS485 Device:", resolved["rs485_device"])
+    print("Right Dynamixel Device:", resolved["right_dxl_device"])
+    print("Right RS485 Device:", resolved["right_rs485_device"])
+    print("Left Dynamixel Device:", resolved["left_dxl_device"])
+    print("Left RS485 Device:", resolved["left_rs485_device"])
     print("\nCameras:")
     for group, cams in resolved["cameras"].items():
         print(f"  {group}:")

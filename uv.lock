@@ -113,7 +113,7 @@ wheels = [
 
 [[package]]
 name = "dynamixel-sdk"
-version = "3.8.4"
+version = "3.8.3"
 source = { directory = "../DynamixelSDK/python" }
 dependencies = [
     { name = "pyserial" },
