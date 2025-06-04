@@ -183,7 +183,7 @@ class GstreamerCameraRecorder:
     def start_recording(self):
         """Start recording by opening the valve."""
         self._gate.set_property("drop", False)
-        self._is_recording = True
+        self.recording = True
         print("🔴 Recording started")
 
     def is_recording(self):
