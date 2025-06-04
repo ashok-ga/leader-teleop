@@ -53,6 +53,13 @@ class DataSyncBuffer:
 
             # Use the latest timestamp from the least-filled buffer as sync target
             base_ts = max(self.buffers[s][-1][0] for s in target_sensors)
+            base_sensor = None
+            for sensor in target_sensors:
+                if self.buffers[sensor][-1][0] == base_ts:
+                    base_sensor = sensor
+                    break
+
+            base_ts = max(self.buffers[s][-1][0] for s in target_sensors)
             result = {}
             for sensor in target_sensors:
                 buf = self.buffers[sensor]
@@ -62,7 +69,8 @@ class DataSyncBuffer:
                 # )
                 if abs(closest[0] - base_ts) > self.tolerance:
                     warning(
-                        f"Breach of tolerance for {sensor}: {abs(closest[0] - base_ts)} > {self.tolerance}"
+                        f"Breach of tolerance for {sensor}: {abs(closest[0] - base_ts)} > {self.tolerance} wrt {base_sensor} at {base_ts}. "
+                        "This may lead to desynchronization."
                     )
                     # return None
                 result[sensor] = closest[1]

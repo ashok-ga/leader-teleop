@@ -58,7 +58,7 @@ class BufferReaderThread(threading.Thread):
             writer = csv.writer(csvfile)
 
             while not self.stop_event.is_set():
-                synced_data = self.sync_buffer.get_synced()
+                synced_data = self.sync_buffer.get_synced(self.buffers_to_write)
                 assert synced_data is not None, "No synced data available"
 
                 if synced_data:

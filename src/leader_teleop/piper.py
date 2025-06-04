@@ -19,7 +19,7 @@ class PiperInterface:
         self,
         diffs: Buffer,
         eef_pose: Buffer,
-        can: str = "can_right",
+        can: str,
         accel: int = PIPER_ACCEL,
         speed: int = PIPER_SPEED,
         loop_hz: float = LOOP_HZ,
@@ -43,6 +43,7 @@ class PiperInterface:
         time.sleep(0.005)  # Allow some time for the arm to enable
         # while not self.piper.EnablePiper():
         #     time.sleep(0.005)
+        self.piper.MotionCtrl_2(0x01, 0x01, 100, 0x00)
         for i in range(1, NUM_JOINTS + 1):
             self.piper.JointMaxAccConfig(i, self.accel)
             self.piper.MotorMaxSpdSet(i, self.speed)
@@ -88,8 +89,13 @@ class PiperInterface:
                 cmds.append(int(d * DEG_FACTOR + 0.5))
 
             if cmds != last_cmds:
-                self.piper.JointCtrl(*cmds)
-                last_cmds = cmds
+                try:
+                    # print(f"Sending joint commands: {cmds}, for piper {self.can}")
+                    self.piper.JointCtrl(*cmds)
+                    last_cmds = cmds
+                except Exception as e:
+                    print(f"Error sending joint commands: {e}, for piper {self.can}")
+                    last_cmds = None
 
             next_t += period
             self.event_stop.wait(max(0, next_t - time.perf_counter()))

@@ -7,7 +7,6 @@ from leader_teleop.buffer.data_sync_buffer import DataSyncBuffer
 from leader_teleop.config.utils import device_config
 
 SERVO_ID = 1
-POS_MIN, POS_MAX = 730, 1730
 GRIP_SPEED, GRIP_ACCEL = 7500, 0
 GD_LOW = 0
 GD_HIGH = 25
@@ -16,15 +15,25 @@ RS485_BAUD = 115200
 
 class RS485GripperInterface:
     def __init__(
-        self, diffs, servo_cmds, servo_pos, rs485_device, poll_frequency=200.0
+        self,
+        diffs,
+        servo_cmds,
+        servo_pos,
+        rs485_device,
+        pos_min,
+        pos_max,
+        poll_frequency=200.0,
     ):
         self.diffs = diffs
         self.servo_cmds = servo_cmds
         self.servo_pos = servo_pos
+        self.pos_min = pos_min
+        self.pos_max = pos_max
 
         self.poll_frequency = poll_frequency
         self._stop_event = threading.Event()
         self._thread = None
+        self.rs485_device = rs485_device
         self._serial_init(rs485_device)
 
     def _serial_init(self, rs485_device):
@@ -86,14 +95,29 @@ class RS485GripperInterface:
         last_pos = None
         while not self._stop_event.is_set():
             buf = self.diffs[-1][1] if len(self.diffs) > 0 else {}
-            gd = buf.get("gripper", 0.0)
-            self.servo_cmds.add(gd)
 
+            gd = buf.get("gripper", 0.0)
+
+            if self.rs485_device == device_config["right_rs485_device"]:
+                gd = -gd
+            # print(f"Gripper command : {gd}, Gripper Device: {self.rs485_device}")
             # Clamp and map to position
             gd = min(max(gd, GD_LOW), GD_HIGH)
+
+            # Need to reverse the direction for left gripper
+            # if self.rs485_device == device_config["left_rs485_device"]:
+            gd = GD_HIGH - gd
+
+            self.servo_cmds.add(gd)
+
             pos = int(
-                POS_MIN + ((gd - GD_LOW) / (GD_HIGH - GD_LOW)) * (POS_MAX - POS_MIN)
+                self.pos_min
+                + ((gd - GD_LOW) / (GD_HIGH - GD_LOW)) * (self.pos_max - self.pos_min)
             )
+
+            # print(
+            #     f"Gripper position, gripper: {pos}, Gripper Device: {self.rs485_device}"
+            # )
 
             if pos != last_pos:
                 self.ser.write(self.make_grip_pkt(pos))
@@ -101,7 +125,8 @@ class RS485GripperInterface:
 
             actual_pos = self.read_servo_position(SERVO_ID)
             normalized_pos = min(
-                max((actual_pos - POS_MIN) / (POS_MAX - POS_MIN), 0.0), 1.0
+                max((actual_pos - self.pos_min) / (self.pos_max - self.pos_min), 0.0),
+                1.0,
             )
             self.servo_pos.add(normalized_pos)
 
@@ -153,15 +178,19 @@ def gripper_init(data_sync_buffer):
         servo_cmds=data_sync_buffer.get_buffer("right_servo_cmds"),
         servo_pos=data_sync_buffer.get_buffer("right_servo_pos"),
         rs485_device=device_config["right_rs485_device"],
-        poll_frequency=100.0,
+        pos_min=730,
+        pos_max=1730,
+        poll_frequency=200.0,
     )
 
-    left_grip = MockRS485GripperInterface(
+    left_grip = RS485GripperInterface(
         diffs=data_sync_buffer.get_buffer("left_diffs"),
         servo_cmds=data_sync_buffer.get_buffer("left_servo_cmds"),
         servo_pos=data_sync_buffer.get_buffer("left_servo_pos"),
         rs485_device=device_config["left_rs485_device"],
-        poll_frequency=100.0,
+        pos_min=540,
+        pos_max=1619,
+        poll_frequency=200.0,
     )
 
     right_grip.start()
@@ -183,23 +212,46 @@ def dry_run():
     data_sync_buffer = DataSyncBuffer(
         [
             "right_diffs",
-            "right_servo_cmd",
+            "right_servo_cmds",
             "right_servo_pos",
             "left_diffs",
-            "left_servo_cmd",
+            "left_servo_cmds",
             "left_servo_pos",
         ]
     )
 
-    right_grip, left_grip = gripper_init()
+    right_grip, left_grip = gripper_init(data_sync_buffer)
 
     data_sync_buffer.get_buffer("right_diffs").add({"gripper": 0.0})
     data_sync_buffer.get_buffer("left_diffs").add({"gripper": 0.0})
-    print("Running RS485GripperInterface for 4 seconds...")
-    for g in [0.0, 6, 12.0, 25.0, 12, 6, 0.0]:
-        data_sync_buffer.get_buffer("right_diffs").add({"gripper": g})
-        data_sync_buffer.get_buffer("left_diffs").add({"gripper": g})
-        time.sleep(1)
+
+    print("Testing Left Gripper...")
+    for i in range(1):
+        for g in [
+            0.0,
+            GD_HIGH / 4,
+            GD_HIGH / 2,
+            GD_HIGH,
+            GD_HIGH / 2,
+            GD_HIGH / 4,
+            0.0,
+        ]:
+            data_sync_buffer.get_buffer("left_diffs").add({"gripper": g})
+            time.sleep(1)
+
+    print("Testing Right Gripper...")
+    for i in range(1):
+        for g in [
+            GD_HIGH,
+            GD_HIGH / 4,
+            GD_HIGH / 2,
+            0,
+            GD_HIGH / 4,
+            GD_HIGH / 2,
+            GD_HIGH,
+        ]:
+            data_sync_buffer.get_buffer("right_diffs").add({"gripper": g})
+            time.sleep(1)
 
     gripper_shutdown(right_grip, left_grip)
 
@@ -207,4 +259,4 @@ def dry_run():
 
 
 if __name__ == "__main__":
-    RS485GripperInterface.dry_run()
+    dry_run()

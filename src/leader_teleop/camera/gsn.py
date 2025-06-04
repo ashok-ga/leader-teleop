@@ -30,7 +30,7 @@ class GstreamerCameraRecorder:
         caps = caps.upper()
         if caps == "MJPG":
             src_caps = f"image/jpeg,width={width},height={height},framerate={fps}/1"
-            decode_chain = "jpegparse ! nvv4l2decoder ! "
+            decode_chain = "jpegparse ! nvv4l2decoder mjpeg=1 ! "
         elif caps in {"YUY2", "YUYV"}:
             src_caps, decode_chain = (
                 f"video/x-raw,format=YUY2,width={width},height={height},framerate={fps}/1",
@@ -259,7 +259,7 @@ if __name__ == "__main__":
     rec2 = GstreamerCameraRecorder(
         sync_buffer=dsb.get_buffer("scene_camera_top"),
         output_pattern="top_%d.mp4",
-        device="/dev/video8",
+        device="/dev/video6",
         width=1280,
         height=720,
         fps=30,
@@ -270,7 +270,7 @@ if __name__ == "__main__":
     rec3 = GstreamerCameraRecorder(
         sync_buffer=dsb.get_buffer("wrist_camera_right"),
         output_pattern="right_%d.mp4",
-        device="/dev/video10",
+        device="/dev/video12",
         width=2560,
         height=720,
         fps=30,

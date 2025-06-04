@@ -69,6 +69,8 @@ class DynamixelReader:
             length = info["length"]
             for j in info["joints"]:
                 raw = reader.getData(j["id"], addr, length)
+                # print(f" motor {j['name']} raw position: {raw}")
+
                 scale = 4095.0 if j["motor_type"] in ["XL430", "XM430"] else 1023.0
                 rng = 360.0 if j["motor_type"] in ["XL430", "XM430"] else 300.0
                 val = (raw / scale) * rng
@@ -141,12 +143,12 @@ def dynamixel_init(data_sync_buffer):
     right_reader = DynamixelReader(
         diffs=data_sync_buffer.get_buffer("right_diffs"),
         dxl_port=device_config["right_dxl_device"],
-        poll_frequency=100.0,
+        poll_frequency=200.0,
     )
     left_reader = DynamixelReader(
         diffs=data_sync_buffer.get_buffer("left_diffs"),
         dxl_port=device_config["left_dxl_device"],
-        poll_frequency=100.0,
+        poll_frequency=200.0,
     )
 
     right_reader.start()
@@ -178,7 +180,7 @@ def dry_run():
     dynamixel_shutdown(right_reader, left_reader)
 
     # print("Right Diffs:", data_sync_buffer.get_buffer("right_diffs").data)
-    print("Left Diffs:", data_sync_buffer.get_buffer("left_diffs").data)
+    # print("Left Diffs:", data_sync_buffer.get_buffer("left_diffs").data)
     print("Dry run completed.")
 
 
