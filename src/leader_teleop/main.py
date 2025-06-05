@@ -71,15 +71,15 @@ def main():
         )
         with term.cbreak():
             while True:
-                print("Press 's' to start recording, 't' to end session.")
+                print("Press 'space' to start recording, 't' to end session.")
 
                 key = term.inkey(timeout=None).lower()
-                if key == "s":
+                if key == " ":
                     print("Starting recording… press q to stop")
 
                     buffer_recorder.start_recording()
 
-                    while term.inkey(timeout=None).lower() != "q":
+                    while term.inkey(timeout=None).lower() != " ":
                         pass
 
                     buffer_recorder.stop_recording()

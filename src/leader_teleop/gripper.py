@@ -178,7 +178,7 @@ def gripper_init(data_sync_buffer):
         servo_cmds=data_sync_buffer.get_buffer("right_servo_cmds"),
         servo_pos=data_sync_buffer.get_buffer("right_servo_pos"),
         rs485_device=device_config["right_rs485_device"],
-        pos_min=730,
+        pos_min=700,
         pos_max=1730,
         poll_frequency=200.0,
     )
@@ -188,8 +188,8 @@ def gripper_init(data_sync_buffer):
         servo_cmds=data_sync_buffer.get_buffer("left_servo_cmds"),
         servo_pos=data_sync_buffer.get_buffer("left_servo_pos"),
         rs485_device=device_config["left_rs485_device"],
-        pos_min=540,
-        pos_max=1619,
+        pos_min=1170,
+        pos_max=2020,
         poll_frequency=200.0,
     )
 

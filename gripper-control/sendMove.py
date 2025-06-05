@@ -4,11 +4,11 @@ import random
 import threading
 
 # Serial configuration
-SERIAL_PORT = "/dev/ttyUSB1"
+SERIAL_PORT = "/dev/ttyUSB2"
 BAUD_RATE = 115200
 SERVO_ID = 1
-POSITION_1 = 200
-POSITION_2 = 1100
+POSITION_1 = 1200
+POSITION_2 = 2020
 SERVO_SPEED = 7500
 SERVO_ACCEL = 0
 
@@ -75,7 +75,7 @@ def move_servo_task(ser):
     interval = 1  # 100 Hz
     next_time = time.time()
     while True:
-        position = random.randint(POSITION_1, POSITION_2)
+        position = 730
         move_packet = build_move_command(SERVO_ID, position, SERVO_SPEED, SERVO_ACCEL)
         ser.write(move_packet)
         with lock:

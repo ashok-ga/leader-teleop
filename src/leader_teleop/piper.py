@@ -40,10 +40,11 @@ class PiperInterface:
         self.piper.ConnectPort()
         self.piper.EnableArm()
 
-        time.sleep(0.005)  # Allow some time for the arm to enable
         # while not self.piper.EnablePiper():
         #     time.sleep(0.005)
         self.piper.MotionCtrl_2(0x01, 0x01, 100, 0x00)
+        time.sleep(0.005)  # Allow some time for the arm to enable
+
         for i in range(1, NUM_JOINTS + 1):
             self.piper.JointMaxAccConfig(i, self.accel)
             self.piper.MotorMaxSpdSet(i, self.speed)
@@ -172,27 +173,37 @@ def dry_run():
     piper_left.start()
 
     # Example: issue some sample commands
-    data_sync_buffer.get_buffer("right_diffs").add(
-        {f"joint_{i}": 0.0 for i in range(1, NUM_JOINTS + 1)}
-    )
+
     data_sync_buffer.get_buffer("left_diffs").add(
         {f"joint_{i}": 0.0 for i in range(1, NUM_JOINTS + 1)}
     )
     time.sleep(2)
-    data_sync_buffer.get_buffer("right_diffs").add(
-        {f"joint_{i}": 0.8 if i in (2, 3) else 0.0 for i in range(1, NUM_JOINTS + 1)}
-    )
+
     data_sync_buffer.get_buffer("left_diffs").add(
         {f"joint_{i}": 0.8 if i in (2, 3) else 0.0 for i in range(1, NUM_JOINTS + 1)}
     )
     time.sleep(2)
-    data_sync_buffer.get_buffer("right_diffs").add(
-        {f"joint_{i}": 0.0 for i in range(1, NUM_JOINTS + 1)}
-    )
+
     data_sync_buffer.get_buffer("left_diffs").add(
         {f"joint_{i}": 0.0 for i in range(1, NUM_JOINTS + 1)}
     )
-    time.sleep(1)
+    time.sleep(2)
+
+    data_sync_buffer.get_buffer("right_diffs").add(
+        {f"joint_{i}": 0.0 for i in range(1, NUM_JOINTS + 1)}
+    )
+
+    time.sleep(2)
+    data_sync_buffer.get_buffer("right_diffs").add(
+        {f"joint_{i}": 0.8 if i in (2, 3) else 0.0 for i in range(1, NUM_JOINTS + 1)}
+    )
+
+    time.sleep(2)
+    data_sync_buffer.get_buffer("right_diffs").add(
+        {f"joint_{i}": 0.0 for i in range(1, NUM_JOINTS + 1)}
+    )
+
+    time.sleep(2)
 
     piper_right.stop()
     piper_left.stop()

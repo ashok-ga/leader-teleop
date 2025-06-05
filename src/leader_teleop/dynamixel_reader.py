@@ -62,14 +62,14 @@ class DynamixelReader:
     def read_all(self):
         out = {}
         for info in self.readers.values():
-            reader = info["reader"]
+            reader: GroupSyncRead = info["reader"]
             if reader.txRxPacket():
                 continue
             addr = info["address"]
             length = info["length"]
             for j in info["joints"]:
                 raw = reader.getData(j["id"], addr, length)
-                # print(f" motor {j['name']} raw position: {raw}")
+                print(f" motor {j['name']} raw position: {raw}")
 
                 scale = 4095.0 if j["motor_type"] in ["XL430", "XM430"] else 1023.0
                 rng = 360.0 if j["motor_type"] in ["XL430", "XM430"] else 300.0
