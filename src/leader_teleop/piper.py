@@ -14,6 +14,17 @@ NUM_JOINTS = 6
 LOOP_HZ = 200
 
 
+# Joint limits in degrees (consistent with the output format)
+JOINT_LIMITS_DEG = [
+    (-150.0, 150.0),   # joint1
+    (0.0, 180.0),      # joint2
+    (-170.0, 0.0),     # joint3
+    (-100.0, 100.0),   # joint4
+    (-70.0, 70.0),     # joint5
+    (-120.0, 120.0),   # joint6
+]
+
+
 class PiperInterface:
     def __init__(
         self,
@@ -82,12 +93,20 @@ class PiperInterface:
             diffs = buf[-1][1] if len(buf) > 0 else {}
 
             for idx, name in enumerate(names):
+                # Apply sign flip logic
                 d = -diffs.get(name, 0.0) if idx in (2, 4) else diffs.get(name, 0.0)
+                # Per-joint constraints from original code
                 if idx == 1:
                     d = max(d, 0.0)
                 elif idx == 2:
                     d = min(d, 0.0)
-                cmds.append(int(d * DEG_FACTOR + 0.5))
+                # Convert to degrees
+                d_deg = d * DEG_FACTOR
+                # Clamp to joint limits
+                min_deg, max_deg = JOINT_LIMITS_DEG[idx]
+                d_deg = max(min(d_deg, max_deg), min_deg)
+                # Round and convert to int
+                cmds.append(int(d_deg + 0.5))
 
             if cmds != last_cmds:
                 try:
@@ -100,6 +119,7 @@ class PiperInterface:
 
             next_t += period
             self.event_stop.wait(max(0, next_t - time.perf_counter()))
+
 
     def start(self):
         """Start Piper interface threads."""
