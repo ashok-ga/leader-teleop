@@ -4,11 +4,11 @@ import random
 import threading
 
 # Serial configuration
-SERIAL_PORT = "/dev/ttyUSB2"
+SERIAL_PORT = "/dev/ttyUSB0"
 BAUD_RATE = 115200
 SERVO_ID = 1
-POSITION_1 = 1200
-POSITION_2 = 2020
+POSITION_1 = 776
+POSITION_2 = 1500
 SERVO_SPEED = 7500
 SERVO_ACCEL = 0
 

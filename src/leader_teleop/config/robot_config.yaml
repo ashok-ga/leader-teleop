@@ -83,6 +83,6 @@ devices:
         width: 2560
         height: 720
       - alias: "wrist_camera_left"
-        device: "/dev/video12"
+        device: "/dev/video13"
         width: 2560
         height: 720

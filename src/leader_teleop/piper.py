@@ -1,3 +1,4 @@
+from logging import debug
 import math
 import threading
 import time
@@ -15,13 +16,13 @@ LOOP_HZ = 200
 
 
 # Joint limits in degrees (consistent with the output format)
-JOINT_LIMITS_DEG = [
-    (-150.0, 150.0),   # joint1
-    (0.0, 180.0),      # joint2
-    (-170.0, 0.0),     # joint3
-    (-100.0, 100.0),   # joint4
-    (-70.0, 70.0),     # joint5
-    (-120.0, 120.0),   # joint6
+JOINT_LIMITS_RAD = [
+    (-2.6179, 2.6179),  # joint1 [-150°, 150°]
+    (0.0, 3.14),  # joint2 [0°, 180°]
+    (-2.967, 0.0),  # joint3 [-170°, 0°]
+    (-1.745, 1.745),  # joint4 [-100°, 100°]
+    (-1.22, 1.22),  # joint5 [-70°, 70°]
+    (-2.09439, 2.09439),  # joint6 [-120°, 120°]
 ]
 
 
@@ -54,11 +55,18 @@ class PiperInterface:
         # while not self.piper.EnablePiper():
         #     time.sleep(0.005)
         self.piper.MotionCtrl_2(0x01, 0x01, 100, 0x00)
-        time.sleep(0.005)  # Allow some time for the arm to enable
+        time.sleep(0.1)  # Allow some time for the arm to enable
 
+        debug(
+            self.can,
+            "Crash Protection config",
+            self.piper.GetCrashProtectionLevelFeedback(),
+        )
         for i in range(1, NUM_JOINTS + 1):
             self.piper.JointMaxAccConfig(i, self.accel)
             self.piper.MotorMaxSpdSet(i, self.speed)
+
+        time.sleep(0.1)
 
     def _piper_angle_to_rad(self, angle):
         return angle * math.pi / 180.0 / 1e3
@@ -66,7 +74,13 @@ class PiperInterface:
     def _reader(self):
         """Read end-effector pose and write to DataSyncBuffer."""
         interval = 1.0 / self.loop_hz
+        i = 0
         while not self.event_stop.is_set():
+            if i % (self.loop_hz * 5) == 0:
+                debug(self.can, self.piper.GetArmStatus())
+                debug(self.can, self.piper.GetArmLowSpdInfoMsgs())
+                debug(self.can, self.piper.GetArmHighSpdInfoMsgs())
+
             msg = self.piper.GetArmEndPoseMsgs()
             js = msg.end_pose
             eef_pose = {
@@ -79,6 +93,7 @@ class PiperInterface:
             }
             self.eef_pose.add(eef_pose)
             time.sleep(interval)
+            i += 1
 
     def _sender(self):
         """Send joint position commands based on joint diffs."""
@@ -93,24 +108,18 @@ class PiperInterface:
             diffs = buf[-1][1] if len(buf) > 0 else {}
 
             for idx, name in enumerate(names):
-                # Apply sign flip logic
                 d = -diffs.get(name, 0.0) if idx in (2, 4) else diffs.get(name, 0.0)
-                # Per-joint constraints from original code
-                if idx == 1:
-                    d = max(d, 0.0)
-                elif idx == 2:
-                    d = min(d, 0.0)
-                # Convert to degrees
+                # Clamp d in radians to joint limits
+                min_rad, max_rad = JOINT_LIMITS_RAD[idx]
+                d = max(min(d, max_rad), min_rad)
+                # Convert to int degrees for JointCtrl, as in your code
                 d_deg = d * DEG_FACTOR
-                # Clamp to joint limits
-                min_deg, max_deg = JOINT_LIMITS_DEG[idx]
-                d_deg = max(min(d_deg, max_deg), min_deg)
-                # Round and convert to int
-                cmds.append(int(d_deg + 0.5))
+                cmds.append(int(d_deg))
 
             if cmds != last_cmds:
                 try:
-                    # print(f"Sending joint commands: {cmds}, for piper {self.can}")
+                    # print(self.can, cmds)
+
                     self.piper.JointCtrl(*cmds)
                     last_cmds = cmds
                 except Exception as e:
@@ -119,7 +128,6 @@ class PiperInterface:
 
             next_t += period
             self.event_stop.wait(max(0, next_t - time.perf_counter()))
-
 
     def start(self):
         """Start Piper interface threads."""

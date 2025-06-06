@@ -1,4 +1,6 @@
+import argparse
 import os
+from pathlib import Path
 import threading
 import time
 from datetime import datetime
@@ -24,6 +26,18 @@ from leader_teleop.buffer.buffer_recorder import (
     BufferRecorder,
 )  # <- Your BufferRecorder class
 
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--session",
+    type=str,
+    default="default_session",
+    required=False,
+    help="The name of the room to use for the stereo streamer",
+)
+parser.add_argument("--test", action="store_true")
+
+args = parser.parse_args()
+
 
 def main():
 
@@ -43,17 +57,21 @@ def main():
         "wrist_camera_left",
     ]  # adjust to match actual names used in buffer
 
-    session_name = input("Enter session name: ")
-    outptut_dir = os.path.join(
-        "recordings", f"{session_name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}"
-    )
+    session_name = args.session
+    if args.test:
+        print("Running in test mode")
+        output_dir = Path("/home/nvidia/leader-teleop/")
+    else:
+        output_dir = os.path.join(
+            "recordings", f"{session_name}_{datetime.now().strftime("%Y%m%d_%H%M%S")}"
+        )
 
     data_sync_buffer = DataSyncBuffer(sensors=data_buffers)
 
     camera_pipeline_manager = None
     camera_pipeline_manager = CameraPipelineManager(
         data_sync_buffer,
-        output_dir=outptut_dir,
+        output_dir=output_dir,
     )
 
     pr, pl = piper_init(data_sync_buffer)
@@ -66,7 +84,7 @@ def main():
             session_name,
             data_sync_buffer,
             camera_pipeline_manager,
-            output_dir=outptut_dir,
+            output_dir=output_dir,
             poll_frequency=20.0,
         )
         with term.cbreak():

@@ -270,7 +270,7 @@ if __name__ == "__main__":
     rec3 = GstreamerCameraRecorder(
         sync_buffer=dsb.get_buffer("wrist_camera_right"),
         output_pattern="right_%d.mp4",
-        device="/dev/video12",
+        device="/dev/video10",
         width=2560,
         height=720,
         fps=30,
